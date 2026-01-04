@@ -51,15 +51,15 @@ var default_settings_cookies = {
             enabled: false,
             level: 0,
             all: true,
-            troops : {
-                spears: 0, 
+            troops: {
+                spears: 0,
                 //.....
             }
         },
         show__auto_paladin_train: {
             enabled: false,
             maxLevel: 0,
-        }
+        },
     }
 };
 
@@ -82,6 +82,8 @@ function prepareLocalStorageItems() {
         localStorage.setItem('tw_lang', JSON.stringify(unsafeWindow.lang));
     }
 
+
+
     localStorage.setItem('waiting_for_queue', localStorage.getItem('waiting_for_queue') ?? '{}');
     localStorage.setItem('building_queue', localStorage.getItem('building_queue') ?? '[]');
     localStorage.setItem('villages_info', localStorage.getItem('villages_info') ?? '[]');
@@ -89,10 +91,15 @@ function prepareLocalStorageItems() {
     localStorage.setItem('mapConfig', localStorage.getItem('mapConfig') ?? '{}');
     localStorage.setItem('map_custom_height', localStorage.getItem('map_custom_height') ?? '600');
     localStorage.setItem('map_custom_width', localStorage.getItem('map_custom_width') ?? '900');
+    if (typeof TribalWars !== 'undefined') {
+        //Peço desculpa a todos, só agora descobri que posso guardar coisas no TM
+        // Store on Tampermonkey storage
+        GM_setValue("current_world", game_data?.world);
+    }
 }
 
 function setCookieCurrentVillage() {
-    var villageID = game_data.village.id,
+    var villageID = game_data.village?.id,
         villages = JSON.parse(localStorage.getItem('villages_info') || '[]'),
         villgersNum = sizeOfObject(villages);
 
@@ -154,9 +161,9 @@ function sizeOfObject(obj) {
     return size;
 }
 
-function createWidgetElement({ identifier, contents, columnToUse, update, extra_name = '', description = '', title = ''}) {
+function createWidgetElement({ identifier, contents, columnToUse, update, extra_name = '', description = '', title = '' }) {
     var columnElement = document.getElementById(columnToUse);
-    
+
     if (columnElement) {
         var elemId = identifier.toLowerCase().replace(/ /g, '_'); // Obtém o título do elemento
         var elemName = extra_name != '' ? elemId + '_' + extra_name : elemId;
@@ -166,7 +173,7 @@ function createWidgetElement({ identifier, contents, columnToUse, update, extra_
         var containerDiv = document.createElement('div');
         containerDiv.id = 'show_' + elemName;
         containerDiv.className = 'vis moveable widget script_widget';
-        containerDiv.setAttribute('data-title', description != ''? description : title);
+        containerDiv.setAttribute('data-title', description != '' ? description : title);
 
         // Create the header with button
         var header = document.createElement('h4');
@@ -190,7 +197,7 @@ function createWidgetElement({ identifier, contents, columnToUse, update, extra_
             }
             localStorage.setItem('settings_cookies', JSON.stringify(settings_cookies));
         };
-        
+
         header.addEventListener('mouseenter', function (event) {
             toggleTooltip(event.target, true);
         });
@@ -247,12 +254,12 @@ function displayWarningPopup(title, message, timeoutDuration = 5000) {
         const popupMenu = document.createElement('div');
         popupMenu.style.fontSize = "17px";
         popupMenu.style.fontWeight = "bold";
-        
+
         const menuText = document.createElement('a');
         menuText.style.cursor = 'pointer';
         menuText.style.color = 'rgb(0 17 255)';
         menuText.innerText = title;
-        
+
         popupMenu.appendChild(menuText);
 
         const popupContent = document.createElement('div');
@@ -262,11 +269,11 @@ function displayWarningPopup(title, message, timeoutDuration = 5000) {
         popupContent.style.display = 'flex';
         popupContent.style.padding = '0';
         popupContent.style.paddingTop = '10px';
-        
+
         const table = document.createElement('table');
         table.className = 'vis';
         table.style.width = '100%';
-        
+
         const tbody = document.createElement('tbody');
         const tr1 = document.createElement('tr');
         const td1 = document.createElement('td');
@@ -285,7 +292,7 @@ function displayWarningPopup(title, message, timeoutDuration = 5000) {
 
         td1.appendChild(label);
         tr1.appendChild(td1);
-        
+
         const tr2 = document.createElement('tr');
         const td2 = document.createElement('td');
         td2.colSpan = 2;
@@ -301,7 +308,7 @@ function displayWarningPopup(title, message, timeoutDuration = 5000) {
             resolve('continue');  // Resolve the promise with 'continue'
             togglePopup(popupDiv);  // Hide the popup
         });
-        
+
         const cancelButton = document.createElement('input');
         cancelButton.type = 'button';
         cancelButton.value = 'Cancel';
@@ -313,7 +320,7 @@ function displayWarningPopup(title, message, timeoutDuration = 5000) {
             resolve('cancel');  // Resolve the promise with 'cancel'
             togglePopup(popupDiv);  // Hide the popup
         });
-        
+
         td2.appendChild(continueButton);
         td2.appendChild(cancelButton);
         tr2.appendChild(td2);
@@ -397,14 +404,31 @@ function toggleTooltip(element, isVisible) {
 
     var tooltip = document.getElementById('tooltip');
     tooltip.querySelector('.body').style.display = 'none';
+
+    var body = tooltip.getElementsByClassName('body')[0];
+    var h3 = tooltip.getElementsByTagName('h3')[0];
+
     if (isVisible) {
         tooltip.style.display = 'block';
         tooltip.style.top = (Math.ceil(elementPosition.top) + 22) + 'px';
         tooltip.style.left = (Math.ceil(elementPosition.left) + 25) + 'px';
         tooltip.classList.add('tooltip-style');
-        var h3 = tooltip.getElementsByTagName('h3')[0];
-        h3.innerHTML = element.parentNode.getAttribute('data-title');
+
+        const data_title = element.parentNode.getAttribute('data-title') ?? element.getAttribute('data-title');
+        const data_tooltip = element.parentNode.getAttribute('data-tooltip-tpl') ?? element.getAttribute('data-tooltip-tpl');
+
+        if (data_title) {
+            h3.innerHTML = data_title;
+            h3.style.display = 'block'
+            body.innerHTML = '';
+        } else if (data_tooltip) {
+            h3.innerHTML = '';
+            body.innerHTML = data_tooltip;
+            body.style.display = 'block'
+        }
     } else {
+        h3.innerHTML = '';
+        body.innerHTML = '';
         tooltip.style.display = 'none';
         tooltip.classList.remove('tooltip-style');
     }
@@ -462,7 +486,7 @@ function extractBuildTimeFromHTML(stringHTML) {
             time = [day, hora, minuto, segundo];
             return time;
         }
-    } 
+    }
 
     showAutoHideBox('Error extractBuildTimeFromHTML: ');
     return time;
@@ -533,6 +557,16 @@ function timeToMilliseconds(timeString) {
     return hours + minutes + seconds;
 }
 
+function formatMinutesToTime(minutes) {
+    const totalSeconds = Math.round(minutes * 60);
+
+    const hours = Math.floor(totalSeconds / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+
+    return `${hours}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
 function wait(seconds) {
     return new Promise(resolve => {
         setTimeout(resolve, seconds * 1000);
@@ -547,7 +581,7 @@ function setFunctionOnTimeOut(id, func, timeToRun) {
 
     // Adiciona até 3 minutos (180000 ms) de aleatoriedade
     let randomExtraTime = Math.random() * 180000;
-    let finalTimeToRun = Math.floor(timeToRun + randomExtraTime);  
+    let finalTimeToRun = Math.floor(timeToRun + randomExtraTime);
 
     let endTime = Math.floor(Date.now() + finalTimeToRun);
     localStorage.setItem('endTime_' + id, endTime);
@@ -601,21 +635,21 @@ if (questButton) {
     var originalOnClick = questButton.onclick;
 
     // Define um novo onclick que chama o original e depois executa o custom
-    questButton.onclick = function(event) {
+    questButton.onclick = function (event) {
         // Chama a função original (se existir)
         if (originalOnClick) {
             originalOnClick.call(this, event);
         }
-        
+
         let checkExist = setInterval(function () {
             let questlineLists = document.querySelectorAll('.questline-list');
-            
+
             if (questlineLists.length > 0) {
                 clearInterval(checkExist); // Para o intervalo quando encontrar
-                
+
                 questlineLists.forEach(questlineList => {
                     let listItems = questlineList.querySelectorAll('li');
-                    
+
                     listItems.forEach(li => {
                         let ul = li.closest('ul'); // Encontra o <ul> mais próximo
                         if (ul) {
@@ -653,13 +687,13 @@ function startTimerOnLabel(endtime, element) {
         var seconds = (remaining % 60).toString().padStart(2, '0');
 
         var formattedTime = `${hours}:${minutes}:${seconds}`;
-        
+
         element.textContent = element.textContent.replace(/\d{2}:\d{2}:\d{2}/, formattedTime);
     }
     element.style.display = "block";
 }
 
-function getRemainingHours (endtime) {
+function getRemainingHours(endtime) {
     var now = Math.floor(Timing.getCurrentServerTime() / 1000);
     var remaining = endtime - now;
     return Math.floor(remaining / 3600);
@@ -706,20 +740,234 @@ function convertBBCodeToHTML(text) {
         }
 
         // Tratamento especial para [url=link]Texto[/url]
-        text = text.replace(/\[url=(.*?)\](.*?)\[\/url\]/gi, function(match, link, text) {
+        text = text.replace(/\[url=(.*?)\](.*?)\[\/url\]/gi, function (match, link, text) {
             if (!link.startsWith("http://") && !link.startsWith("https://")) {
                 link = "https://" + link;
             }
             return `<a href="${link}" target="_blank">${text}</a>`;
         });
     }
-    
+
     return text;
+}
+
+async function updateMapVillages() {
+    const STORAGE_KEY = 'map_villages';
+    const TIMESTAMP_KEY = 'map_villages_last_update';
+    const ONE_HOUR = 60 * 60 * 1000; // 1 hour in milliseconds
+
+    const lastUpdate = localStorage.getItem(TIMESTAMP_KEY);
+    const now = Date.now();
+
+    // Check if we already have data and if it's still "fresh" (less than 1 hour old)
+    if (lastUpdate && (now - lastUpdate < ONE_HOUR) && localStorage.getItem(STORAGE_KEY)) {
+        console.log("Map villages data is up to date (less than 1h old).");
+        return;
+    }
+
+    console.log("Updating map villages data...");
+
+    try {
+        const response = await fetch(window.location.origin + "/map/village.txt");
+
+        if (!response.ok) throw new Error('Network response was not ok');
+
+        const data = await response.text();
+
+        // Save to localStorage
+        localStorage.setItem(STORAGE_KEY, data);
+        localStorage.setItem(TIMESTAMP_KEY, now.toString());
+
+        console.log("Map villages updated and saved to localStorage.");
+    } catch (error) {
+        console.error("Failed to fetch village data:", error);
+    }
+}
+
+function calculateDistanceToTarget(targetCoords) {
+    // 1. Get current village coordinates from game_data
+    const currentCoords = game_data.village.coord; // Format: "454|369"
+
+    // 2. Split both strings into X and Y arrays
+    const [x1, y1] = currentCoords.split('|').map(Number);
+    const [x2, y2] = targetCoords.split('|').map(Number);
+
+    // 3. Apply the Pythagorean theorem: sqrt((x2-x1)^2 + (y2-y1)^2)
+    const deltaX = x2 - x1;
+    const deltaY = y2 - y1;
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+    // 4. Return formatted to 2 decimal places (standard for TW)
+    return parseFloat(distance.toFixed(2));
+}
+
+// Get unit info from server and store unit speeds and carry capacity
+function storeUnitsInfo() {
+    const hasSpeeds = localStorage.getItem('units_speed');
+    const hasCarry = localStorage.getItem('units_carry');
+
+    if (hasSpeeds && hasSpeeds !== '{}' && hasCarry && hasCarry !== '{}') {
+        return; // already stored, skip fetch
+    }
+
+    fetch('/interface.php?func=get_unit_info')
+        .then(res => res.text())
+        .then(xmlText => {
+            const xml = new DOMParser().parseFromString(xmlText, 'text/xml');
+
+            const speeds = {};
+            const carry = {};
+            const units = [...xml.documentElement.children];
+
+            units.forEach(unit => {
+                const unitName = unit.tagName;
+
+                // Extract Speed
+                const speedNode = unit.querySelector('speed');
+                speeds[unitName] = speedNode ? Number(speedNode.textContent) : null;
+
+                // Extract Carry
+                const carryNode = unit.querySelector('carry');
+                carry[unitName] = carryNode ? Number(carryNode.textContent) : null;
+            });
+
+            localStorage.setItem('units_speed', JSON.stringify(speeds));
+            localStorage.setItem('units_carry', JSON.stringify(carry));
+
+            console.log('[TW] Unit data stored:', { speeds, carry });
+        })
+        .catch(err => {
+            console.error('[TW] Failed to fetch unit info', err);
+        });
+}
+
+
+
+/**
+ * Launches an attack automatically.
+ * Explaining the two-step AJAX process used by TribalWars to prevent botting.
+ * * @param {Object} units - Object containing unit counts { spear: 10, ... }
+ * @param {string|number} targetId - Internal database ID of the target village
+ */
+async function launchAttack(units, targetId) {
+    try {
+        const GD = typeof unsafeWindow !== 'undefined' ? unsafeWindow.game_data : window.game_data;
+        if (!GD || !GD.csrf) throw new Error("Game data not found.");
+
+        const csrfToken = GD.csrf;
+        const currentVillage = GD.village.id;
+        const baseUrl = `https://${window.location.host}/game.php?village=${currentVillage}&screen=place`;
+
+        /**
+         * AJAX CALL #1: THE PREPARATION PHASE (ajax=confirm)
+         * * PURPOSE: This call asks the server to validate the attack. 
+         * The server checks if you have enough troops and if the target is valid.
+         * * WHY IT'S NECESSARY: The server does not launch the attack yet. 
+         * Instead, it returns a JSON object containing the "Confirmation Dialog" HTML.
+         * This HTML contains the unique security tokens (ch and honeypot) required for Step 2.
+         */
+        console.log("Step 1: Requesting confirmation dialog...");
+
+        let coordX = "", coordY = "";
+        const rawFocus = unsafeWindow.TWMap.context._curFocus;
+        if (rawFocus) {
+            const focusStr = rawFocus.toString();
+            coordX = focusStr.substring(0, 3);
+            coordY = focusStr.substring(3, 6);
+        }
+
+        const step1Data = new URLSearchParams();
+        step1Data.append("target", targetId);
+        step1Data.append("x", coordX);
+        step1Data.append("y", coordY);
+        step1Data.append("attack", "1"); // In PT servers, the button internal value is "Atacar" (try for now with 1)
+        step1Data.append("h", csrfToken);
+
+        for (const [unit, amount] of Object.entries(units)) {
+            step1Data.append(unit, amount);
+        }
+
+        const responseStep1 = await fetch(`${baseUrl}&ajax=confirm`, {
+            method: "POST",
+            body: step1Data,
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'TribalWars-Ajax': '1' // Tells the server to return JSON instead of a full page redirect
+            }
+        });
+
+        const jsonResponse = await responseStep1.json();
+
+        // Check for server-side logic errors (e.g., "Not enough units")
+        if (jsonResponse.error) {
+            const msg = Array.isArray(jsonResponse.error) ? jsonResponse.error[0] : jsonResponse.error;
+            throw new Error(msg);
+        }
+
+        // The dialog HTML is stored in response.dialog
+        const htmlText = jsonResponse.response.dialog;
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlText, "text/html");
+
+        /**
+         * TOKEN EXTRACTION (The "Secret Sauce")
+         * * 'ch': Confirmation Hash. A one-time code generated by the server for this specific attack.
+         * 'dynamicInput': A hidden field with a randomized name (e.g. "8219ab..."). 
+         * This is a "honeypot" protection; if you don't send this exact name/value pair in Step 2, 
+         * the server knows you are a bot and returns "Invalid Command".
+         */
+        const chInput = doc.querySelector('input[name="ch"]');
+        const dynamicInput = doc.querySelector('input[type="hidden"]:not([name="ch"]):not([name="template_id"]):not([name="source_village"])');
+
+        if (!chInput || !dynamicInput) {
+            throw new Error("Security tokens (ch/honeypot) were not found in the response.");
+        }
+
+        /**
+         * AJAX CALL #2: THE EXECUTION PHASE (action=command)
+         * * PURPOSE: This is the actual "Confirm" click. It sends the troops out.
+         * * WHY IT'S NECESSARY: You must prove to the server that you performed Step 1 
+         * by providing the 'ch' hash and the dynamic honeypot token.
+         */
+        console.log(`Step 2: Executing attack with hash: ${chInput.value}`);
+
+        const step2Data = new URLSearchParams();
+        step2Data.append(dynamicInput.name, dynamicInput.value); // Sending the dynamic honeypot
+        step2Data.append("ch", chInput.value);                  // Sending the confirmation hash
+        step2Data.append("x", coordX);
+        step2Data.append("y", coordY);
+        step2Data.append("action", "command");                  // The action that actually triggers the movement
+        step2Data.append("h", csrfToken);
+
+        for (const [unit, amount] of Object.entries(units)) {
+            step2Data.append(unit, amount);
+        }
+
+        const responseStep2 = await fetch(`${baseUrl}&action=command&h=${csrfToken}`, {
+            method: "POST",
+            body: step2Data,
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+        });
+
+        if (responseStep2.ok) {
+            const successMsg = `Attack successfully sent to ${coordX}|${coordY}!`;
+            showAutoHideBox(successMsg, false);
+            console.log("%c " + successMsg, "color: green; font-weight: bold;");
+        } else {
+            throw new Error("The server rejected the final command.");
+        }
+
+    } catch (error) {
+        if (typeof showAutoHideBox === 'function') {
+            showAutoHideBox(error.message, true);
+        }
+        console.error("Attack Failed:", error.message);
+    }
 }
 
 function start() {
     var urlPage = document.location.href;
-    //validation to session expired, automatically select active world (not yet :D)
+    //check for expired session, automatically select last active world
     if (!urlPage.includes('?session_expired') && typeof game_data != 'undefined') {
         prepareVillageList();
         villageList = localStorage.getItem('villages_info') ? JSON.parse(localStorage.getItem('villages_info')) : [];
@@ -737,7 +985,7 @@ function start() {
                     functionName(widget.column);
                 }
             });
-        } else if (urlPage.includes("&screen=place&mode=scavenge")) {
+        } else if (urlPage.split("&")[2] === "mode=scavenge") {
             $(document).ready(function () {
                 injectAutoScavengingOption();
             });
@@ -761,22 +1009,42 @@ function start() {
             setInterval(() => checkInactivity(maxInactiveMin), 30000);
         }
 
-        //Override the sortable update function from Tribalwars
-        var originalSortableUpdate = $("#overviewtable").sortable("option", "update");
-        $("#overviewtable").sortable("option", "update", function () {
-            saveColumnOrder(this);
-            if (typeof originalSortableUpdate === "function" && !arguments[1].item[0].classList.contains('script_widget')) {
-                $(this).find('.script_widget').detach();
-                originalSortableUpdate.apply(this, arguments);
-                
-                settings_cookies.widgets.forEach(function (widget) {
-                    var functionName = widgetsInjectFunctions[widget.name];
-                    if (functionName) {
-                        functionName(widget.column);
-                    }
-                });
-            }
-        });
+        const table = $("#overviewtable");
+
+        if (table.length && table.data("ui-sortable")) {
+            const originalSortableUpdate = table.sortable("option", "update");
+            table.sortable("option", "update", function () {
+                saveColumnOrder(this);
+                if (
+                    typeof originalSortableUpdate === "function" &&
+                    !arguments[1].item[0].classList.contains('script_widget')
+                ) {
+                    $(this).find('.script_widget').detach();
+                    originalSortableUpdate.apply(this, arguments);
+
+                    settings_cookies.widgets.forEach(function (widget) {
+                        const functionName = widgetsInjectFunctions[widget.name];
+                        if (functionName) {
+                            functionName(widget.column);
+                        }
+                    });
+                }
+            });
+        }
+
+        updateMapVillages();
+        storeUnitsInfo();
+
+    } else {
+        // get from TM storage
+        let lastWorld = GM_getValue("current_world");
+        const targetLink = document.querySelector('.world-select[href*="' + lastWorld + '"]');
+
+        if (targetLink) {
+            window.location.href = targetLink.href;
+        } else {
+            console.warn("No last world was found.");
+        }
     }
 }
 
@@ -806,21 +1074,21 @@ function autoDailyBonusCollect() {
     if (game_data) {
         fetch(game_data.link_base_pure + "daily_bonus&ajaxaction=open", {
             "headers": {
-            "tribalwars-ajax": "1",
-            "x-requested-with": "XMLHttpRequest"
+                "tribalwars-ajax": "1",
+                "x-requested-with": "XMLHttpRequest"
             },
             "referrer": game_data.link_base_pure + "info_player&mode=daily_bonus",
             "body": "day=8&from_screen=profile&h=" + game_data.csrf,
             "method": "POST",
             "credentials": "include"
-        });  
+        });
     }
 }
 
 function sendScavengeAjax() {
-    //falta conseguir as tropas a enviar... se tiver os numeros das settings sao esses
-    //se nao tiver, tenho de os arranjar
-    // falta tere o nivel a enviar
+    // falta conseguir as tropas a enviar... se tiver os numeros das settings sao esses
+    // se nao tiver, tenho de os arranjar
+    // falta ter o nivel a enviar
     if (game_data) {
         const squadRequest = {
             village_id: 14520,
@@ -840,12 +1108,12 @@ function sendScavengeAjax() {
             option_id: 3, //NIVEL DISPONIVEL??? guardar na primeira vez que se entra na pagina do scavenger, e so mudar se voltar lá
             use_premium: false
         };
-        
+
         const requestData = {
             squad_requests: [squadRequest],
             h: game_data.csrf
         };
-        
+
         // Converte o objeto para um formato adequado para envio
         const body = new URLSearchParams();
         Object.entries(requestData).forEach(([key, value]) => {
@@ -865,8 +1133,8 @@ function sendScavengeAjax() {
                 body.append(key, value);
             }
         });
-        
-       fetch(game_data.link_base_pure + "scavenge_api&ajaxaction=send_squads", {
+
+        fetch(game_data.link_base_pure + "scavenge_api&ajaxaction=send_squads", {
             headers: {
                 "tribalwars-ajax": "1",
                 "x-requested-with": "XMLHttpRequest"

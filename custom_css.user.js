@@ -54,5 +54,10 @@ var customCSS = `
     font-size: 87%;
     line-height: 11px;
 }
+
+.custom-map-ctx-button:hover {
+    cursor: pointer;
+    background-position-y: -24px !important;
+}
 `;
 GM_addStyle(customCSS);
