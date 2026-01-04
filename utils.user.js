@@ -92,7 +92,6 @@ function prepareLocalStorageItems() {
     localStorage.setItem('map_custom_height', localStorage.getItem('map_custom_height') ?? '600');
     localStorage.setItem('map_custom_width', localStorage.getItem('map_custom_width') ?? '900');
     if (typeof TribalWars !== 'undefined') {
-        //Peço desculpa a todos, só agora descobri que posso guardar coisas no TM
         // Store on Tampermonkey storage
         GM_setValue("current_world", game_data?.world);
     }
@@ -751,7 +750,7 @@ function convertBBCodeToHTML(text) {
     return text;
 }
 
-async function updateMapVillages() {
+async function updateMapInfoVillages() {
     const STORAGE_KEY = 'map_villages';
     const TIMESTAMP_KEY = 'map_villages_last_update';
     const ONE_HOUR = 60 * 60 * 1000; // 1 hour in milliseconds
@@ -1032,7 +1031,7 @@ function start() {
             });
         }
 
-        updateMapVillages();
+        updateMapInfoVillages();
         storeUnitsInfo();
 
     } else {
