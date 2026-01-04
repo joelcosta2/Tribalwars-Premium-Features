@@ -1,466 +1,366 @@
 // Village Arrows, Navigation Bar
+
+/**
+ * Swaps the village ID from a target URL into the current page's URL.
+ * This allows "staying" on the same screen (e.g., Stable) while switching villages.
+ * @param {string} goToUrl - The URL containing the target village ID (usually from a link).
+ * @returns {string} The formatted URL for the current screen with the new village ID.
+ */
 function getVillageLinkCurrentScreen(goToUrl) {
-    var str = document.location.href,
-        temp = str.indexOf("="),
-        temp2 = str.indexOf("&", temp),
-        urlFirst = str.slice(0, temp + 1),
-        urlLast = str.slice(temp2);
+    try {
+        const currentUrl = new URL(window.location.href);
+        const targetUrl = new URL(goToUrl, window.location.origin);
 
-    temp = goToUrl.indexOf("=");
-    temp2 = goToUrl.indexOf("&", temp);
-    var villagenumber = goToUrl.slice(temp + 1, temp2);
-    var FINALURL = urlFirst + villagenumber + urlLast;
+        // Get the village ID ('village') from the target URL
+        const newVillageId = targetUrl.searchParams.get('village');
 
-    return FINALURL;
+        if (newVillageId) {
+            // Update the 'village' parameter in the current URL
+            currentUrl.searchParams.set('village', newVillageId);
+
+            return currentUrl.toString();
+        }
+
+        // Fallback: If no ID found, return the original target
+        return goToUrl;
+    } catch (e) {
+        console.error("Error parsing village URL:", e);
+        return goToUrl;
+    }
 }
 
+/**
+ * Navigates to the next village in the list.
+ * If at the end of the list, loops back to the first village.
+ */
 function nextVillage() {
-    var goToUrl,
-        villages = JSON.parse(localStorage.getItem('villages_info') || '[]');
-    if (villages) {
-        if (villages[currentVillageIndex + 1]) {
-            goToUrl = villages[currentVillageIndex + 1].url;
-        } else {
-            goToUrl = villages[0].url;
+    try {
+        const villages = JSON.parse(localStorage.getItem('villages_info') || '[]');
+
+        // 1. Guard clause: Ensure we have villages to navigate to
+        if (!villages.length) {
+            console.warn("[Navigation] No village information found in localStorage.");
+            return;
         }
+
+        // 2. Calculate next index (Loops back to 0 if at the end)
+        // Using (index + 1) % length is a clean way to handle the "reset to 0" logic
+        const nextIndex = (currentVillageIndex + 1) % villages.length;
+
+        const targetVillage = villages[nextIndex];
+
+        if (targetVillage?.url) {
+            // 3. Update global index (optional, depends on your script's state management)
+            window.currentVillageIndex = nextIndex;
+
+            // 4. Redirect using the screen-preserving helper
+            window.location.href = getVillageLinkCurrentScreen(targetVillage.url);
+        }
+    } catch (error) {
+        console.error("[Navigation] Error during next village transition:", error);
     }
-    document.location.href = getVillageLinkCurrentScreen(goToUrl);
 }
 
+/**
+ * Navigates to the previous village in the list.
+ * If at the start, loops back to the last village.
+ */
 function previousVillage() {
-    var goToUrl,
-        villages = JSON.parse(localStorage.getItem('villages_info') || '[]');
-    if (villages) {
-        if (villages[currentVillageIndex - 1]) {
-            goToUrl = villages[currentVillageIndex - 1].url;
-        } else {
-            goToUrl = villages[sizeOfObject(villages) - 1].url;
+    try {
+        const villages = JSON.parse(localStorage.getItem('villages_info') || '[]');
+
+        if (!villages.length) {
+            console.warn("[Navigation] No village list found.");
+            return;
         }
+
+        // Calculate previous index with a positive modulo wrap-around
+        // (index - 1 + length) % length ensures we never get a negative number
+        const prevIndex = (currentVillageIndex - 1 + villages.length) % villages.length;
+
+        const targetVillage = villages[prevIndex];
+
+        if (targetVillage?.url) {
+            window.currentVillageIndex = prevIndex;
+            window.location.href = getVillageLinkCurrentScreen(targetVillage.url);
+        }
+    } catch (error) {
+        console.error("[Navigation] Error navigating to previous village:", error);
     }
-    document.location.href = getVillageLinkCurrentScreen(goToUrl);
 }
 
+/**
+ * Injects navigation arrows into the top menu bar.
+ * Uses 'insertAdjacentHTML' to preserve existing menu event listeners.
+ */
 function insertNavigationArrows() {
-    if (settings_cookies.general['show__navigation_arrows']) {
-        var menu_row1_container = document.getElementById('menu_row2');
-        var htmlToInject = '<td class="box-item icon-box separate arrowCell"><a id="village_switch_previous" class="village_switch_link" accesskey="a"><span class="arrowLeft" style="cursor:pointer;"> </span></a></td><td class="box-item icon-box arrowCell"><a id="village_switch_next" class="village_switch_link" accesskey="d"><span class="arrowRight" style="cursor:pointer;"> </span></a></td>';
+    if (!settings_cookies.general?.['show__navigation_arrows']) return;
 
-        if (menu_row1_container) menu_row1_container.innerHTML = htmlToInject + menu_row1_container?.innerHTML;
+    const menuRow = document.getElementById('menu_row2');
+    if (!menuRow) return;
 
-        var leftArrowContainer = document.getElementById('village_switch_previous');
-        if (leftArrowContainer) leftArrowContainer.onclick = function () { previousVillage() };
+    const htmlToInject = `
+        <td class="box-item icon-box separate arrowCell">
+            <a id="village_switch_previous" class="village_switch_link" accesskey="a">
+                <span class="arrowLeft"></span>
+            </a>
+        </td>
+        <td class="box-item icon-box arrowCell">
+            <a id="village_switch_next" class="village_switch_link" accesskey="d">
+                <span class="arrowRight"></span>
+            </a>
+        </td>`;
 
-        var rightArrowContainer = document.getElementById('village_switch_next');
-        if (rightArrowContainer) rightArrowContainer.onclick = function () { nextVillage() };
-    }
+    // Inject at the beginning of the row without refreshing the whole innerHTML
+    menuRow.insertAdjacentHTML('afterbegin', htmlToInject);
+
+    // Attach events
+    const prevBtn = document.getElementById('village_switch_previous');
+    const nextBtn = document.getElementById('village_switch_next');
+
+    if (prevBtn) prevBtn.onclick = (e) => { e.preventDefault(); previousVillage(); };
+    if (nextBtn) nextBtn.onclick = (e) => { e.preventDefault(); nextVillage(); };
 }
 
+/**
+ * Injects a small dropdown icon into the menu bar to open the village list popup.
+ */
 function insertListVillagesPopup() {
-    if (settings_cookies.general['show__navigation_arrows']) {
-        var menuRow2 = document.getElementById("menu_row2");
+    if (!settings_cookies.general?.['show__navigation_arrows']) return;
 
-        if (menuRow2) {
-            var td = document.createElement("td");
-            td.className = "box-item";
-            td.style.paddingRight = "3px";
+    const menuRow2 = document.getElementById("menu_row2");
+    if (!menuRow2) return;
 
-            var img = document.createElement("img");
-            img.src = "https://dspt.innogamescdn.com/asset/95eda994/graphic//icons/slide_down.png";
-            img.alt = "Open Village List";
-            img.style.cursor = "pointer";
-            img.style.width = "18px";
-            img.style.height = "18px";
-            img.style.maxWidth = "18px";
-            img.style.maxHeight = "18px";
-            img.style.float = "right";
+    // Create container cell
+    const td = document.createElement("td");
+    td.className = "box-item box-item-village-list";
 
-            // Adicionar evento de clique para abrir o popup
-            img.addEventListener("click", function () {
-                openVillageListPopup();
-            });
+    // Create the toggle icon
+    const img = Object.assign(document.createElement("img"), {
+        src: "https://dspt.innogamescdn.com/asset/95eda994/graphic//icons/slide_down.png",
+        alt: "Open Village List",
+        className: "village-list-toggle"
+    });
 
-            td.appendChild(img);
-            menuRow2.appendChild(td);
+    // Event listener
+    img.onclick = (e) => {
+        e.stopPropagation();
+        if (typeof openVillageListPopup === 'function') {
+            openVillageListPopup();
         }
-    }
+    };
+
+    td.appendChild(img);
+    menuRow2.appendChild(td);
 }
 
+/**
+ * Opens a popup containing a list of all villages for quick navigation.
+ */
 function openVillageListPopup() {
-    const lang = JSON.parse(localStorage.getItem('tw_lang'));
+    const lang = JSON.parse(localStorage.getItem('tw_lang') || '{}');
 
-    // Remover o popup se já existir
-    var existingPopup = document.getElementById("group_popup");
-    if (existingPopup) {
-        existingPopup.remove();
+    // 1. Toggle: If it exists, remove it and stop
+    const existing = document.getElementById("group_popup");
+    if (existing) {
+        existing.closest('.popup_helper')?.remove();
         return;
     }
 
-    // Criar o container principal
-    var popupHelper = document.createElement("div");
+    // 2. Create Elements
+    const popupHelper = document.createElement("div");
     popupHelper.className = "popup_helper";
 
-    var popup = document.createElement("div");
-    popup.id = "group_popup";
-    popup.className = "popup_style";
-    popup.style.width = "320px";
-    popup.style.position = "fixed";
-    popup.style.top = "165.75px";
-    popup.style.left = "493.648px";
-    popup.style.display = "block";
-    popup.style.zIndex = "1000"; // Para garantir que fique acima de outros elementos
-
-    // Criar o cabeçalho do popup
-    var popupMenu = document.createElement("div");
-    popupMenu.id = "group_popup_menu";
-    popupMenu.className = "popup_menu";
-    popupMenu.innerHTML = lang['49f8eff5b37c62212f0b7870b07af7bb'];
-
-    var closeLink = document.createElement("a");
-    closeLink.id = "closelink_group_popup";
-    closeLink.href = "#";
-    closeLink.innerText = "X";
-    closeLink.style.float = "right";
-    closeLink.style.cursor = "pointer";
-
-    // Evento para fechar o popup
-    closeLink.addEventListener("click", function (e) {
-        e.preventDefault();
-        popup.remove();
+    const popup = Object.assign(document.createElement("div"), {
+        id: "group_popup",
+        className: "popup_style"
     });
 
-    popupMenu.appendChild(closeLink);
-    popup.appendChild(popupMenu);
-
-    // Criar o conteúdo do popup
-    var popupContent = document.createElement("div");
-    popupContent.id = "group_popup_content";
-    popupContent.className = "popup_content";
-    popupContent.style.height = "380px";
-    popupContent.style.overflowY = "auto";
-
-    /*// Criar o formulário
-    var form = document.createElement("form");
-    form.id = "select_group_box";
-    form.action = "/game.php?village=15844&screen=groups&ajax=load_villages_from_group&mode=overview";
-    form.method = "POST";
-
-    var hiddenInput = document.createElement("input");
-    hiddenInput.type = "hidden";
-    hiddenInput.name = "mode";
-    hiddenInput.value = "overview";
-
-    form.appendChild(hiddenInput);
-
-    var label = document.createElement("p");
-    label.style.margin = "0 0 10px 0";
-    label.style.fontWeight = "bold";
-    label.innerHTML = 'Grupos:';
-
-    var select = document.createElement("select");
-    select.id = "group_id";
-    select.name = "group_id";
-    select.style.marginLeft = "3px";
-
-    var options = [
-        { value: "16606", text: "Ofensiva completa" },
-        { value: "16607", text: "Ataque a chegar" },
-        { value: "16608", text: "Contém nobre" },
-        { value: "0", text: "todos", selected: true }
-    ];
-
-    options.forEach(optionData => {
-        var option = document.createElement("option");
-        option.value = optionData.value;
-        option.textContent = optionData.text;
-        if (optionData.selected) option.selected = true;
-        select.appendChild(option);
+    // 3. Header & Close Logic
+    const popupMenu = Object.assign(document.createElement("div"), {
+        id: "group_popup_menu",
+        className: "popup_menu",
+        innerHTML: lang['49f8eff5b37c62212f0b7870b07af7bb'] || "Villages"
     });
 
-    label.appendChild(select);
-    form.appendChild(label);
-    popupContent.appendChild(form);*/
+    const closeBtn = Object.assign(document.createElement("a"), {
+        id: "closelink_group_popup",
+        href: "#",
+        innerText: "X"
+    });
 
-    // Criar tabela de aldeias
-    var tableContainer = document.createElement("div");
-    tableContainer.id = "group_list_content";
-    tableContainer.style.overflow = "auto";
-    tableContainer.style.height = "340px";
+    const closePopup = (e) => {
+        if (e) e.preventDefault();
+        popupHelper.remove();
+    };
 
-    var table = document.createElement("table");
-    table.id = "group_table";
-    table.className = "vis";
-    table.width = "100%";
-    table.cellPadding = "5";
-    table.cellSpacing = "0";
+    // Close on 'X' click
+    closeBtn.onclick = closePopup;
 
-    var tbody = document.createElement("tbody");
+    // Close when clicking the background overlay (outside the popup)
+    popupHelper.onclick = (e) => {
+        if (e.target === popupHelper) closePopup();
+    };
 
-    var headerRow = document.createElement("tr");
-    var headerTh = document.createElement("th");
-    headerTh.className = "group_label";
-    headerTh.colSpan = "2";
-    headerTh.textContent =  lang['abc63490c815af81276f930216c8d92b'] ?? "Village";
+    popupMenu.appendChild(closeBtn);
 
+    // 4. Content and Table
+    const popupContent = Object.assign(document.createElement("div"), {
+        id: "group_popup_content",
+        className: "popup_content"
+    });
+
+    const table = Object.assign(document.createElement("table"), {
+        id: "group_table",
+        className: "vis",
+        width: "100%"
+    });
+
+    const tbody = document.createElement("tbody");
+
+    // Table Header
+    const headerRow = tbody.insertRow();
+    const headerTh = document.createElement("th");
+    headerTh.colSpan = 2;
+    headerTh.textContent = lang['abc63490c815af81276f930216c8d92b'] ?? "Village";
     headerRow.appendChild(headerTh);
-    tbody.appendChild(headerRow);
-    table.appendChild(tbody);
-    tableContainer.appendChild(table);
 
-    // Obter dados do localStorage
-    var villagesInfo = JSON.parse(localStorage.getItem("villages_info")) || {};
-    
-    // Criar dinamicamente as linhas das aldeias
-    Object.keys(villagesInfo).forEach(index => {
-        var village = villagesInfo[index];
+    // 5. Populate Villages
+    let villagesData = JSON.parse(localStorage.getItem("villages_info") || "[]");
 
-        var villageRow = document.createElement("tr");
+    // Convert to array if it's an object, or default to empty array
+    const villagesList = Array.isArray(villagesData)
+        ? villagesData
+        : Object.values(villagesData);
 
-        var villageTd1 = document.createElement("td");
-        villageTd1.className = "selected";
+    villagesList.forEach(village => {
+        if (!village) return; // Skip empty entries
 
-        var villageLink = document.createElement("a");
-        villageLink.href = getVillageLinkCurrentScreen(village.url);
-        villageLink.className = "select-village";
-        villageLink.textContent = village.name.trim();
+        const row = tbody.insertRow();
 
-        villageTd1.appendChild(villageLink);
+        const cellName = row.insertCell(0);
+        cellName.className = "selected";
+        const link = Object.assign(document.createElement("a"), {
+            href: getVillageLinkCurrentScreen(village.url),
+            className: "select-village",
+            textContent: village.name?.trim() || "Unknown"
+        });
+        cellName.appendChild(link);
 
-        var villageTd2 = document.createElement("td");
-        villageTd2.style.fontWeight = "bold";
-        villageTd2.style.width = "100px";
-        villageTd2.style.textAlign = "right";
-        villageTd2.className = "selected";
-        villageTd2.textContent = village.coords ? village.coords : "N/A"; // Aqui pode ser ajustado para exibir coordenadas se disponíveis
-
-        villageRow.appendChild(villageTd1);
-        villageRow.appendChild(villageTd2);
-        tbody.appendChild(villageRow);
+        const cellCoords = row.insertCell(1);
+        cellCoords.className = "selected village-list-coords";
+        cellCoords.textContent = village.coords || "N/A";
     });
 
+    // 6. Assembly
     table.appendChild(tbody);
-    tableContainer.appendChild(table);
-    popupContent.appendChild(tableContainer);
+    popupContent.appendChild(table);
+    popup.appendChild(popupMenu);
     popup.appendChild(popupContent);
     popupHelper.appendChild(popup);
 
     document.body.appendChild(popupHelper);
 }
 
+/**
+ * Injects a custom navigation bar (Quickbar) into the game interface.
+ */
 function injectNavigationBar() {
-    if (settings_cookies.general['show__navigation_bar']) {
-        const tw_lang = JSON.parse(localStorage.getItem('tw_lang'));
-        // Objeto com os links e imagens
-        var urlsObject = {
-            "Main": {
-                img: "https://dspt.innogamescdn.com/asset/7fe7ab60/graphic/buildings/mid/main3.png",
-                href: "/game.php?village=" + game_data.village.id + "&screen=main"
-            },
-            "Recruitment": {
-                img: "https://dspt.innogamescdn.com/asset/243a567d/graphic/unit/att.png",
-                href: "/game.php?village=" + game_data.village.id + "&screen=train"
-            },
-            "Smith": {
-                img: "https://dspt.innogamescdn.com/asset/7fe7ab60/graphic/buildings/mid/smith2.png",
-                href: "/game.php?village=" + game_data.village.id + "&screen=smith"
-            },
-            "Place": {
-                img: "https://dspt.innogamescdn.com/asset/7fe7ab60/graphic/buildings/mid/place1.png",
-                href: "/game.php?village=" + game_data.village.id + "&screen=place"
-            },
-            [String(tw_lang["52e136b31c4cc30c8f3d9eeb8dc56013"])]: {
-                img: "https://dspt.innogamescdn.com/asset/7fe7ab60/graphic/scavenging/options/3.png",
-                href: "/game.php?village=" + game_data.village.id + "&screen=place&mode=scavenge"
-            },
-            "Del Misc Reports": {
-                img: "https://dspt.innogamescdn.com/asset/243a567d/graphic/delete.png",
-                run: async function() {
-                    try {
-                        const response = await fetch(game_data.link_base_pure + "report&action=del_all&mode=other&h=" + game_data.csrf, {
-                            "headers": {
-                                "priority": "u=0, i",
-                                "sec-ch-ua": "\"Not A(Brand\";v=\"8\", \"Chromium\";v=\"132\", \"Microsoft Edge\";v=\"132\"",
-                                "sec-ch-ua-platform": "\"Windows\""
-                            },
-                            "referrer": game_data.link_base_pure + "report&mode=other",
-                            "credentials": "include"
-                        });
-                
-                        if (!response.ok) {
-                            throw new Error(`Erro na requisição: ${response.status} ${response.statusText}`);
-                        }
-                
-                        showAutoHideBox('Misc reports deleted', false);
-                    } catch (error) {
-                        showAutoHideBox('Error deleting misc reports', true);
-                    }
-                }
-            },
-            "Quests": {
-                img: "https://dsen.innogamescdn.com/asset/243a567d/graphic/quests_new/quest_icon.png",
-                run: function() {
-                    Questlines.showDialog(0, 'main-tab');
-                }
+    if (!settings_cookies.general?.['show__navigation_bar']) return;
+
+    const tw_lang = JSON.parse(localStorage.getItem('tw_lang') || '{}');
+    const villageId = game_data.village.id;
+
+    // Define Navigation Items
+    const navItems = {
+        "Main": { img: "buildings/mid/main3.png", href: `/game.php?village=${villageId}&screen=main` },
+        "Recruitment": { img: "unit/att.png", href: `/game.php?village=${villageId}&screen=train` },
+        "Smith": { img: "buildings/mid/smith2.png", href: `/game.php?village=${villageId}&screen=smith` },
+        "Place": { img: "buildings/mid/place1.png", href: `/game.php?village=${villageId}&screen=place` },
+        [tw_lang["52e136b31c4cc30c8f3d9eeb8dc56013"] || "Scavenge"]: {
+            img: "scavenging/options/3.png",
+            href: `/game.php?village=${villageId}&screen=place&mode=scavenge`
+        },
+        "Del Misc Reports": {
+            img: "delete.png",
+            run: async () => {
+                try {
+                    const url = `${game_data.link_base_pure}report&action=del_all&mode=other&h=${game_data.csrf}`;
+                    const res = await fetch(url, { credentials: "include" });
+                    showAutoHideBox(res.ok ? 'Misc reports deleted' : 'Error deleting reports', !res.ok);
+                } catch (e) { showAutoHideBox('Network Error', true); }
             }
-        };
-
-        // Seleciona o elemento com a classe 'maincell'
-        const mainCell = document.querySelector('.maincell');
-
-        // Criar tabela principal
-        const tableOuter = document.createElement('table');
-        tableOuter.id = 'quickbar_outer';
-        tableOuter.align = 'center';
-        tableOuter.width = '100%';
-        tableOuter.cellSpacing = '0';
-
-        // Criar tbody
-        const tbodyOuter = document.createElement('tbody');
-        const trOuter = document.createElement('tr');
-        const tdOuter = document.createElement('td');
-
-        // Criar tabela interna
-        const tableInner = document.createElement('table');
-        tableInner.id = 'quickbar_inner';
-        tableInner.style.borderCollapse = 'collapse';
-        tableInner.width = '100%';
-
-        // Criar tbody interno
-        const tbodyInner = document.createElement('tbody');
-
-        // Criar a linha superior
-        const trTopBorder = document.createElement('tr');
-        trTopBorder.className = 'topborder';
-        ['left', 'main', 'right'].forEach(cls => {
-            const td = document.createElement('td');
-            td.className = cls;
-            trTopBorder.appendChild(td);
-        });
-
-        // Criar a linha de conteúdo
-        const trContent = document.createElement('tr');
-        const tdLeft = document.createElement('td');
-        tdLeft.className = 'left';
-        const tdMain = document.createElement('td');
-        tdMain.id = 'quickbar_contents';
-        tdMain.className = 'main';
-        const tdRight = document.createElement('td');
-        tdRight.className = 'right';
-        tdRight.style.padding = '0 5px';
-
-        // Criar o ícone de edição no lado direito
-        const editIcon = document.createElement('img');
-        editIcon.src = "https://pt106.tribalwars.com.pt/graphic/plus.png";
-        editIcon.alt = "Edit";
-        editIcon.style.cursor = "pointer";
-        editIcon.style.width = "18px";
-        editIcon.style.height = "18px";
-        editIcon.style.maxWidth = "18px";
-        editIcon.style.maxHeight = "18px";
-        editIcon.style.float = "right"; // Mantém o ícone o mais à direita possível
-        editIcon.title = "Edit Navigation Bar";
-        editIcon.addEventListener("click", function () {
-            alert("TBD - implement edit navigation items"); // Aqui podes substituir pelo código de edição real
-        });
-
-        // Adicionar o ícone na célula da direita
-        tdRight.appendChild(editIcon);
-
-        // Criar a lista UL
-        const quickbarUL = document.createElement('ul');
-        quickbarUL.className = 'menu quickbar';
-
-        // Adicionar os itens dinamicamente
-        let hotkeyIndex = 1;
-        for (const [name, data] of Object.entries(urlsObject)) {
-            const listItem = document.createElement('li');
-            listItem.className = 'quickbar_item';
-            listItem.setAttribute('data-hotkey', hotkeyIndex++);
-        
-            const span = document.createElement('span');
-            const link = document.createElement('a');
-            link.className = 'quickbar_link';
-        
-            if (data.href) {
-                link.href = data.href;
-            } else if (data.run) {
-                link.href = "#"; // Adiciona um link "falso" para parecer clicável
-                link.addEventListener("click", (e) => {
-                    e.preventDefault(); // Evita navegação para "#"
-                    data.run(); // Executa a função
-                });
-            }
-        
-            const img = document.createElement('img');
-            img.className = 'quickbar_image';
-            img.src = data.img;
-            img.alt = '';
-            img.style.width = "18px";
-            img.style.height = "18px";
-            img.style.maxWidth = "18px";
-            img.style.maxHeight = "18px";
-        
-            link.appendChild(img);
-            link.appendChild(document.createTextNode(name));
-        
-            span.appendChild(link);
-            listItem.appendChild(span);
-            quickbarUL.appendChild(listItem);
+        },
+        "Quests": {
+            img: "quests_new/quest_icon.png",
+            run: () => Questlines.showDialog(0, 'main-tab')
         }
-        
+    };
 
-        // Adicionar a UL na célula central
-        tdMain.appendChild(quickbarUL);
+    // Construct the Table Shell using Template Literals
+    const tableHTML = `
+        <table id="quickbar_outer" align="center" width="100%" cellspacing="0">
+            <tbody>
+                <tr><td>
+                    <table id="quickbar_inner" style="border-collapse: collapse;" width="100%">
+                        <tbody>
+                            <tr class="topborder"><td class="left"></td><td class="main"></td><td class="right"></td></tr>
+                            <tr>
+                                <td class="left"></td>
+                                <td id="quickbar_contents" class="main">
+                                    <ul id="script_quickbar_ul" class="menu quickbar"></ul>
+                                </td>
+                                <td class="right" style="padding: 0 5px;">
+                                    <img id="nav_edit_icon" src="graphic/plus.png" class="navbar-edit-icon" title="Edit Navigation Bar">
+                                </td>
+                            </tr>
+                            <tr class="bottomborder"><td class="left"></td><td class="main"></td><td class="right"></td></tr>
+                            <tr><td class="shadow" colspan="3"><div class="leftshadow"></div><div class="rightshadow"></div></td></tr>
+                        </tbody>
+                    </table>
+                </td></tr>
+            </tbody>
+        </table>`;
 
-        // Criar a linha inferior
-        const trBottomBorder = document.createElement('tr');
-        trBottomBorder.className = 'bottomborder';
-        ['left', 'main', 'right'].forEach(cls => {
-            const td = document.createElement('td');
-            td.className = cls;
-            trBottomBorder.appendChild(td);
+    const target = document.querySelector('.newStyleOnly');
+    if (!target) return;
+
+    target.insertAdjacentHTML('afterend', tableHTML);
+
+    // Populate List Items
+    const ul = document.getElementById('script_quickbar_ul');
+    const assetBase = "https://dspt.innogamescdn.com/asset/7fe7ab60/graphic/";
+
+    Object.entries(navItems).forEach(([name, data], index) => {
+        const li = document.createElement('li');
+        li.className = 'quickbar_item';
+
+        const link = Object.assign(document.createElement('a'), {
+            className: 'quickbar_link',
+            href: data.href || "#"
         });
 
-        // Criar sombra
-        const trShadow = document.createElement('tr');
-        const tdShadow = document.createElement('td');
-        tdShadow.className = 'shadow';
-        tdShadow.colSpan = '3';
-
-        const divLeftShadow = document.createElement('div');
-        divLeftShadow.className = 'leftshadow';
-        const divRightShadow = document.createElement('div');
-        divRightShadow.className = 'rightshadow';
-
-        tdShadow.appendChild(divLeftShadow);
-        tdShadow.appendChild(divRightShadow);
-        trShadow.appendChild(tdShadow);
-
-        // Montar estrutura da tabela interna
-        trContent.appendChild(tdLeft);
-        trContent.appendChild(tdMain);
-        trContent.appendChild(tdRight);
-        tbodyInner.appendChild(trTopBorder);
-        tbodyInner.appendChild(trContent);
-        tbodyInner.appendChild(trBottomBorder);
-        tbodyInner.appendChild(trShadow);
-        tableInner.appendChild(tbodyInner);
-
-        // Montar estrutura da tabela externa
-        tdOuter.appendChild(tableInner);
-        trOuter.appendChild(tdOuter);
-        tbodyOuter.appendChild(trOuter);
-        tableOuter.appendChild(tbodyOuter);
-
-        const newStyleOnlyElement = document.querySelector('.newStyleOnly');
-        if (newStyleOnlyElement) {
-            newStyleOnlyElement.insertAdjacentElement('afterend', tableOuter);
+        if (data.run) {
+            link.onclick = (e) => { e.preventDefault(); data.run(); };
         }
-    }
+
+        const img = Object.assign(document.createElement('img'), {
+            className: 'navbar-icon',
+            src: data.img.startsWith('http') ? data.img : assetBase + data.img
+        });
+
+        link.append(img, name);
+        li.appendChild(link);
+        ul.appendChild(li);
+    });
+
+    // Attach Edit Event
+    document.getElementById('nav_edit_icon').onclick = () => alert("TBD - Edit logic");
 }
 
 //delete premium promotion
 if (settings_cookies.general['remove__premium_promo']) {
-    const style = document.createElement("style"); 
-    style.innerHTML = ".premium_account_hint { display: none !important; }"; 
+    const style = document.createElement("style");
+    style.innerHTML = ".premium_account_hint { display: none !important; }";
     document.head.appendChild(style);
 }

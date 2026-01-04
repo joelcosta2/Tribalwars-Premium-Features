@@ -49,107 +49,111 @@ function saveScriptSettings() {
     location.reload();
 }
 
+/**
+ * Injects the script settings button into the UI.
+ * Priority: QuestLog > MainCell Absolute Position.
+ * @param {HTMLElement} maincell - The game's main content container.
+ */
 function injectScriptSettingsButtom(maincell) {
-    var questLogElem = document.getElementsByClassName('questlog');
+    const questLog = document.querySelector('.questlog');
 
-    if (questLogElem) {
-        var settingsPopupButton = document.createElement('div');
-        settingsPopupButton.id = 'settings_popup_button';
-        settingsPopupButton.onclick = function () {
-            togglePopup(document.getElementById('settings_popup'));
-        };
+    // Create the button container
+    const btn = document.createElement('div');
+    btn.id = 'settings_popup_button';
+    btn.classList.add('script-settings-btn');
 
-        var questIcon = document.createElement('div');
-        questIcon.className = 'quest';
-        questIcon.style.backgroundImage = 'url(https://dspt.innogamescdn.com/asset/b56f49d7/graphic/icons/settings.png)';
+    // Create the icon (using game class 'quest' + our custom class)
+    const icon = document.createElement('div');
+    icon.className = 'quest script-settings-icon';
+    btn.appendChild(icon);
 
-        questIcon.addEventListener('mouseover', () => questIcon.style.opacity = '0.7');
-        questIcon.addEventListener('mouseleave', () => questIcon.style.opacity = '1');
+    // Single click handler
+    btn.onclick = () => {
+        const popup = document.getElementById('settings_popup');
+        if (typeof togglePopup === 'function') {
+            togglePopup(popup);
+        }
+    };
 
-        settingsPopupButton.appendChild(questIcon);
-        questLogElem[0]?.appendChild(settingsPopupButton);
-    } else {
-        var settingsPopupButton = document.createElement('div');
-        settingsPopupButton.id = 'settings_popup_button';
-        settingsPopupButton.style.position = 'absolute';
-        settingsPopupButton.style.top = '5px';
-        settingsPopupButton.style.left = '-65px';
-        settingsPopupButton.style.top = '39px';
-        settingsPopupButton.onclick = function () {
-            togglePopup(document.getElementById('settings_popup'));
-        };
-
-        var questIcon = document.createElement('div');
-        questIcon.className = 'quest';
-        questIcon.style.backgroundImage = 'url(https://dspt.innogamescdn.com/asset/b56f49d7/graphic/icons/settings.png)';
-
-        settingsPopupButton.appendChild(questIcon);
-        maincell.children[0].appendChild(settingsPopupButton);
+    if (questLog) {
+        // Option A: Inside the quest log (standard layout)
+        questLog.appendChild(btn);
+    } else if (maincell?.children[0]) {
+        // Option B: Absolute positioning (fallback layout)
+        btn.classList.add('script-settings-btn-fixed');
+        maincell.children[0].appendChild(btn);
     }
 }
 
+/**
+ * Injects the settings popup by assembling components from helper functions.
+ */
 function injectScriptSettingsPopUp() {
-    var maincell = document.getElementsByClassName('maincell')[0];
-    injectScriptSettingsButtom(maincell);
+    // 1. Initialize the entry button
+    const maincell = document.getElementsByClassName('maincell')[0];
+    if (maincell) {
+        injectScriptSettingsButtom(maincell);
+    }
 
-    var popupHelperDiv = document.createElement('div');
-    var popupStyleDiv = createPopupContainer();
-    var popupMenuDiv = createPopupHeader(popupStyleDiv);
-    var tabNavDiv = createTabNavigation();
+    // 2. Create UI components
+    const wrapper = document.createElement('div');
+    const container = createPopupContainer();
+    const header = createPopupHeader(container);
+    const tabNavigation = createTabNavigation();
 
-    var { tabButtons, tabContents } = createTabs(tabNavDiv);
-    var saveButtonDiv = createSaveButton();
+    // Deconstruct tab data
+    const { tabContents } = createTabs(tabNavigation);
+    const saveButton = createSaveButton();
 
-    popupStyleDiv.appendChild(popupMenuDiv);
-    popupStyleDiv.appendChild(tabNavDiv);
-    tabContents.forEach(content => popupStyleDiv.appendChild(content));
-    popupStyleDiv.appendChild(saveButtonDiv);
+    // 3. Assemble the hierarchy
+    // Append header and navigation first
+    container.append(header, tabNavigation);
 
-    popupHelperDiv.appendChild(popupStyleDiv);
-    document.body.appendChild(popupHelperDiv);
+    // Append all content areas
+    tabContents.forEach(content => container.appendChild(content));
+
+    // Append the final save button
+    container.appendChild(saveButton);
+
+    // 4. Final injection into the DOM
+    wrapper.appendChild(container);
+    document.body.appendChild(wrapper);
 }
 
+/**
+ * Creates the main container for the settings popup.
+ * Appearance and positioning are handled via CSS classes.
+ */
 function createPopupContainer() {
-    var popup = document.createElement('div');
-    popup.classList.add('popup_style', 'borderimage', 'popup_box');
+    const popup = document.createElement('div');
+
+    // TribalWars native classes + our custom class
+    popup.classList.add('popup_style', 'borderimage', 'popup_box', 'script-settings-popup');
+
     popup.id = 'settings_popup';
-    Object.assign(popup.style, {
-        width: '700px',
-        font: 'inherit',
-        opacity: '1',
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -70%)',
-        display: 'none',
-        padding: '10px',
-        overflow: 'hidden'
-    });
+
     return popup;
 }
 
+/**
+ * Creates the header for the settings popup with a title and close button.
+ * @param {HTMLElement} popup - The parent popup element to toggle.
+ */
 function createPopupHeader(popup) {
-    var header = document.createElement('div');
-    Object.assign(header.style, {
-        fontSize: "17px",
-        fontWeight: "bold",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        paddingBottom: "5px"
-    });
+    const header = document.createElement('div');
+    header.classList.add('script-popup-header');
     header.textContent = 'Script Settings';
 
-    var closeLink = document.createElement('a');
-    closeLink.onclick = function () {
-        popup.style.display = popup.style.display === 'none' ? 'block' : 'none';
-    };
-    Object.assign(closeLink.style, {
-        cursor: 'pointer',
-        fontSize: "18px",
-        fontWeight: "bold"
-    });
+    const closeLink = document.createElement('a');
+    closeLink.classList.add('script-popup-close');
     closeLink.textContent = 'X';
+
+    // Toggle logic: Switches between 'none' and 'block'
+    closeLink.onclick = (e) => {
+        e.preventDefault();
+        const isHidden = popup.style.display === 'none';
+        popup.style.display = isHidden ? 'block' : 'none';
+    };
 
     header.appendChild(closeLink);
     return header;
@@ -184,124 +188,134 @@ function createTabs(tabNav) {
     return { tabButtons, tabContents };
 }
 
+/**
+ * Creates an individual tab button.
+ * @param {string} groupName - The label for the tab.
+ * @param {number} index - The index of the tab (0 for default active).
+ * @param {Array} tabButtons - Array of all buttons for state management.
+ * @param {Array} tabContents - Array of all content divs for state management.
+ */
 function createTabButton(groupName, index, tabButtons, tabContents) {
-    var tabButton = document.createElement('button');
+    const tabButton = document.createElement('button');
+    const safeId = groupName.replace(/\s/g, "_");
+
     tabButton.textContent = groupName;
-    tabButton.id = `tabButton_${groupName.replace(/\s/g, "_")}`;
+    tabButton.id = `tabButton_${safeId}`;
+    tabButton.classList.add('script-tab-btn');
 
-    Object.assign(tabButton.style, {
-        padding: '0',
-        border: 'none',
-        cursor: 'pointer',
-        padding: '4px',
-        background: index === 0 ? '#c1a264' : '#f4e4bc',
-        border: index === 0 ? '1px solid #7d510f' : 'none',
-        flex: '1'
-    });
+    // Set initial state
+    if (index === 0) {
+        tabButton.classList.add('active');
+    }
 
-    tabButton.onclick = function () {
-        tabButtons.forEach(btn => {
-            btn.style.background = '#f4e4bc';
-            btn.style.border = 'none';
-        });
+    tabButton.onclick = () => {
+        // 1. Reset all buttons and contents
+        tabButtons.forEach(btn => btn.classList.remove('active'));
+        tabContents.forEach(content => content.classList.remove('active'));
 
-        tabContents.forEach(content => {
-            content.style.display = 'none';
-        });
+        // 2. Set current button to active
+        tabButton.classList.add('active');
 
-        tabButton.style.background = '#c1a264';
-        tabButton.style.border = '1px solid #7d510f';
-
-        let activeContent = document.getElementById(`tabContent_${groupName.replace(/\s/g, "_")}`);
+        // 3. Find and show corresponding content
+        const activeContent = document.getElementById(`tabContent_${safeId}`);
         if (activeContent) {
-            activeContent.style.display = 'block';
+            activeContent.classList.add('active');
         }
     };
 
     return tabButton;
 }
 
+/**
+ * Creates the content area for a specific tab, including setting rows.
+ */
 function createTabContent(groupName, index) {
-    var tabContent = document.createElement('div');
-    tabContent.id = `tabContent_${groupName.replace(/\s/g, "_")}`;
-    tabContent.style.display = index === 0 ? 'block' : 'none';
+    const safeId = groupName.replace(/\s/g, "_");
+    const tabContent = document.createElement('div');
+    tabContent.id = `tabContent_${safeId}`;
+    tabContent.classList.add('script-tab-content');
 
-    var tableElement = document.createElement('table');
-    tableElement.classList.add('vis');
-    tableElement.style.width = '100%';
+    // Initial visibility state based on index
+    if (index === 0) tabContent.classList.add('active');
 
-    var settingsGroups = getSettingsGroups();
+    const table = document.createElement('table');
+    table.classList.add('vis', 'settings-table');
 
-    availableSettings.forEach(function (setting) {
-        if (settingsGroups[groupName].includes(setting.name)) {
-            var row = tableElement.insertRow();
-            var cell1 = row.insertCell(0);
-            var cell2 = row.insertCell(1);
+    const settingsGroups = getSettingsGroups();
+    const currentGroup = settingsGroups[groupName] || [];
 
-            cell1.textContent = setting.label;
-            cell1.style.fontWeight = 'bold';
-            cell1.style.padding = '8px';
+    // Filter and build rows
+    availableSettings.forEach(setting => {
+        if (!currentGroup.includes(setting.name)) return;
 
-            var label = document.createElement('label');
-            var input = document.createElement('input');
-            input.type = 'checkbox';
-            input.name = setting.name;
-            input.checked = typeof settings_cookies.general[setting.name] === 'object'
+        // 1. Create Main Setting Row
+        const row = table.insertRow();
+        const cellLabel = row.insertCell(0);
+        const cellInput = row.insertCell(1);
+
+        cellLabel.classList.add('settings-label-cell');
+        cellLabel.textContent = setting.label;
+
+        const labelWrapper = document.createElement('label');
+        const checkbox = Object.assign(document.createElement('input'), {
+            type: 'checkbox',
+            name: setting.name,
+            checked: typeof settings_cookies.general[setting.name] === 'object'
                 ? settings_cookies.general[setting.name].enabled
-                : settings_cookies.general[setting.name];
+                : !!settings_cookies.general[setting.name]
+        });
 
-            label.appendChild(input);
-            label.appendChild(document.createTextNode(setting.description));
+        labelWrapper.append(checkbox, document.createTextNode(` ${setting.description}`));
+        cellInput.appendChild(labelWrapper);
+        cellInput.classList.add('settings-input-cell');
 
-            cell2.appendChild(label);
-            cell2.style.padding = '0 5px';
+        // 2. Handle Extra Settings (Sub-rows)
+        if (setting.extraSettings) {
+            Object.keys(setting.extraSettings).forEach(extraKey => {
+                const extraData = setting.extraSettings[extraKey];
+                const extraRow = table.insertRow();
+                extraRow.classList.add('extra-setting-row');
 
-            // Se houver extraSettings, adicionamos dinamicamente
-            if (setting.extraSettings) {
-                Object.keys(setting.extraSettings).forEach(extraKey => {
-                    let extraRow = tableElement.insertRow();
-                    let extraCell1 = extraRow.insertCell(0);
-                    let extraCell2 = extraRow.insertCell(1);
+                const exCell1 = extraRow.insertCell(0);
+                const exCell2 = extraRow.insertCell(1);
 
-                    extraCell1.textContent = setting.extraSettings[extraKey].label;
+                exCell1.textContent = extraData.label;
 
-                    let extraInput = document.createElement('input');
-                    extraInput.type = setting.extraSettings[extraKey].type;
-                    extraInput.name = `${setting.name}__${extraKey}`;
-
-                    let savedValue = settings_cookies.general[setting.name]?.[extraKey];
-                    extraInput.value = savedValue !== undefined ? savedValue : setting.extraSettings[extraKey].default;
-
-                    extraCell2.appendChild(extraInput);
+                const extraInput = Object.assign(document.createElement('input'), {
+                    type: extraData.type,
+                    name: `${setting.name}__${extraKey}`,
+                    value: settings_cookies.general[setting.name]?.[extraKey] ?? extraData.default
                 });
-            }
+
+                exCell2.appendChild(extraInput);
+            });
         }
     });
 
-    tabContent.appendChild(tableElement);
+    tabContent.appendChild(table);
     return tabContent;
 }
 
+/**
+ * Creates the Save button container and the submit input.
+ * Styling is managed via the #saveButtonDiv and .btn-save-settings classes.
+ */
 function createSaveButton() {
-    var saveButtonDiv = document.createElement('div');
+    const saveButtonDiv = document.createElement('div');
     saveButtonDiv.id = 'saveButtonDiv';
-    Object.assign(saveButtonDiv.style, {
-        textAlign: 'center',
-        marginTop: '10px'
+
+    const saveButton = Object.assign(document.createElement('input'), {
+        type: 'submit',
+        value: 'Save Changes',
+        className: 'btn btn-save-settings' // Combine native and custom classes
     });
 
-    var saveButton = document.createElement('input');
-    saveButton.type = 'submit';
-    saveButton.value = 'Save Changes';
-    saveButton.className = 'btn';
-    Object.assign(saveButton.style, {
-        padding: '8px 16px',
-        fontSize: '14px',
-        cursor: 'pointer'
-    });
-
-    saveButton.onclick = function () {
-        saveScriptSettings();
+    // Handle saving logic
+    saveButton.onclick = (e) => {
+        e.preventDefault(); // Prevent accidental form submission/page reload
+        if (typeof saveScriptSettings === 'function') {
+            saveScriptSettings();
+        }
     };
 
     saveButtonDiv.appendChild(saveButton);
@@ -309,42 +323,72 @@ function createSaveButton() {
 }
 
 var availableSettings = [
-    { "name": "keep_awake", "label": "Keep Awake", "description": "Refreshes the page after 5 minutes of inactivity." },
-    { "name": "redirect__train_buildings", "label": "Redirect Train Buildings", "description": "All buildings used for training purposes redirect directly to the train screen." },
-    { "name": "show__navigation_arrows", "label": "Use Navigation Arrows", "description": "Enables navigation arrows for easier switch between villages." },
+    // General / Utility
+    { "name": "keep_awake", "label": "Keep Awake", "description": "Automatically refreshes the page after 5 minutes of inactivity to prevent timeout." },
+    { "name": "redirect__train_buildings", "label": "Smart Training Redirect", "description": "Directly opens the recruitment screen when clicking on training-related buildings." },
+    { "name": "show__navigation_arrows", "label": "Village Navigation Arrows", "description": "Adds arrows to the UI for faster switching between your villages." },
 
-    { "name": "show__village_list", "label": "Village List Widget", "description": "Display the village list widget on the overview screen." },
-    { "name": "show__recruit_troops", "label": "Recruitment Widget", "description": "Display a widget to recruit troops on overview page (NOT FULLY IMPLEMENTED)" },
-    { "name": "show__notepad", "label": "Notepad Widget", "description": "Display a notepad widget for taking notes (per village)." },
-    { "name": "show__building_queue", "label": "Building Queue Widget", "description": "Display the building queue and available upgrades on the overview page. Allows adding/removing buildings to the queue from the overview screen." },
-    { "name": "show__building_queue_all", "label": "All Buildings in Queue", "description": "Display all buildings in the queue, including those that cannot be upgraded due to a lack of resources or a full queue and allows to use the fake building queue. Requires the browser to be open. (IN TESTING)" },
+    // Overview Widgets
+    { "name": "show__village_list", "label": "Village List Widget", "description": "Displays a quick-access list of your villages on the overview screen." },
+    { "name": "show__recruit_troops", "label": "Recruitment Widget", "description": "Enables a troop recruitment panel on the overview page (Experimental)." },
+    { "name": "show__notepad", "label": "Village Notepad", "description": "Adds a village-specific notepad for personalized notes and reminders." },
+    { "name": "show__building_queue", "label": "Construction Manager", "description": "Manage your building queue and upgrades directly from the overview screen." },
+    { "name": "show__building_queue_all", "label": "Enhanced Queue Info", "description": "Shows all potential upgrades, including those limited by resources. Supports local fake queues." },
 
-    { "name": "show__extra_options_map_hover", "label": "Show Extra Map Hover Info", "description": "Display additional info when hovering over a village on the map." },
-    { "name": "show__outgoingInfo_map", "label": "Show Outgoing Commands Info", "description": "Display additional info about outgoing units per village." },
+    // Map Enhancements
+    { "name": "show__extra_options_map_hover", "label": "Advanced Map Hover", "description": "Reveals detailed village information when hovering over the map." },
+    { "name": "show__outgoingInfo_map", "label": "Map Command Overlay", "description": "Displays outgoing command icons directly on the map." },
 
-    { "name": "show__overview_premmium_info", "label": "Display Premium overview information", "description": "Display additional premium information for buildings, similar to what we get with premium (graphical overview)" },
-    { "name": "show__navigation_bar", "label": "Navigation Bar", "description": "Display the navigation bar at the top of the screen." },
-    { "name": "show__time_storage_full_hover", "label": "Show Time Until Full Storage on Hover", "description": "Display the remaining time until storage is full when hovering over a resource." },
+    // UI / Premium Features
+    { "name": "show__overview_premmium_info", "label": "Visual Building Overview", "description": "Provides a graphical overview of building levels, similar to Premium Account features." },
+    { "name": "show__navigation_bar", "label": "Custom Navigation Bar", "description": "Adds a specialized navigation bar at the top of the screen for easier access." },
+    { "name": "show__time_storage_full_hover", "label": "Storage Timer", "description": "Shows the exact time remaining until your storage is full when hovering over resources." },
 
-    { "name": "show__auto_scavenging", "label": "Enable Auto Scavenging", "description": "Automatically manages scavenging tasks. Requires the browser to be open." },
+    // Automation
+    { "name": "show__auto_scavenging", "label": "Auto-Scavenger", "description": "Automatically manages and sends scavenging runs. (Requires active browser tab)." },
     {
-        "name": "show__auto_paladin_train", "label": "Enable Auto Paladin Training", "description": "Automatically trains paladins. Requires the browser to be open.",
+        "name": "show__auto_paladin_train", "label": "Auto-Paladin Trainer", "description": "Automatically manages paladin training tasks. (Requires active browser tab).",
         "extraSettings": {
-            "maxLevel": { "label": "Train Paladin until level:", "type": "number", "default": 0 },
+            "maxLevel": { "label": "Train until level:", "type": "number", "default": 30 },
         }
     },
 
-    { "name": "remove__premium_promo", "label": "Remove Premium Promos", "description": "Removes premium promotional content from all pages." }
-    // Add more settings as needed
+    // Cleanup
+    { "name": "remove__premium_promo", "label": "Hide Premium Ads", "description": "Removes all premium promotional banners and intrusive advertisements from the interface." }
 ];
 
+/**
+ * Groups setting names into categories for tabbed navigation.
+ * Each key represents a tab name in the settings popup.
+ */
 function getSettingsGroups() {
     return {
-        "Widgets": ["show__village_list", "show__recruit_troops", "show__notepad", "show__building_queue", "show__building_queue_all"],
-        "UI Enhancements": ["show__navigation_arrows", "show__time_storage_full_hover", "show__overview_premmium_info", "show__navigation_bar"],
-        "Map Options": ["show__extra_options_map_hover", "show__outgoingInfo_map"],
-        "Automation": ["show__auto_scavenging", "show__auto_paladin_train"],
-        "Other": ["keep_awake", "remove__premium_promo", "redirect__train_buildings"]
+        "Widgets": [
+            "show__village_list",
+            "show__recruit_troops",
+            "show__notepad",
+            "show__building_queue",
+            "show__building_queue_all"
+        ],
+        "Map": [
+            "show__extra_options_map_hover",
+            "show__outgoingInfo_map"
+        ],
+        "UI & UX": [
+            "show__navigation_arrows",
+            "show__time_storage_full_hover",
+            "show__overview_premmium_info",
+            "show__navigation_bar"
+        ],
+        "Automation": [
+            "show__auto_scavenging",
+            "show__auto_paladin_train"
+        ],
+        "General": [
+            "keep_awake",
+            "redirect__train_buildings",
+            "remove__premium_promo"
+        ]
     };
 }
 

@@ -77,12 +77,12 @@ var currentVillageIndex,
     textSelected,
     isBuildQueueFull = false;
 
+//-----
+
 function prepareLocalStorageItems() {
     if (unsafeWindow.lang) {
         localStorage.setItem('tw_lang', JSON.stringify(unsafeWindow.lang));
     }
-
-
 
     localStorage.setItem('waiting_for_queue', localStorage.getItem('waiting_for_queue') ?? '{}');
     localStorage.setItem('building_queue', localStorage.getItem('building_queue') ?? '[]');
