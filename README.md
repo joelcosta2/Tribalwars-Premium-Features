@@ -1,69 +1,68 @@
-# Tribalwars_Script
+# Tribalwars: Premium Features
 
 ## Description
 
-Tribalwars_Script is a collection of scripts designed to enhance the Tribalwars gaming experience. It introduces several premium like features, such as an expanded building queue, additional navigation options, a larger map, and extra village information. The script adds a new column to the left of the main screen, and the widgets it introduces will remember their position on the screen. With these features, the gameplay experience is streamlined, offering users more control and convenience while playing, even without a premium account.
+**Tribalwars: Premium Features** is a comprehensive enhancement suite designed to elevate the Tribalwars gaming experience by unlocking utility tools typically reserved for Premium Account holders. The script streamlines empire management by introducing a fully customizable **Extra-Large Map**, an **Infinite Building Queue** and advanced automation for routine tasks like **Scavenging** and **Paladin Training**.
+
+To optimize your workflow, the script injects a persistent sidebar on the left side of the screen. All introduced widgets are draggable and feature **state-memory**, meaning they will remember their exact position on your screen every time you log in. Whether you are a casual player or a competitive strategist, this script provides the data transparency and one-click convenience needed to manage your villages with maximum efficiency, even without a premium account.
 
 ## Key Features
 
+### 🗺️ Map Enhancements
+- **Extra Large Map:** Enjoy a larger map without premium. Toggle it on the map page and set the size freely—no limits!
+  ![Extra Large Map](img/largeMap.png)
+
+- **Extra Village Information on Map Hover:** Gain valuable insights with additional village information displayed on map hover. Details include the last raid performed, resources detected in the last attack, date of the last attack, and ongoing attack or return.
+  ![Extra Village Information on Map Hover](img/mapVillageHoverExtraInfo.png)
+
+- **Direct Template Attacks from Map:** Quick-action buttons added to the map context menu to launch attacks using saved troop templates with a single click.
+  ![Direct Template Attacks from Map](img/mapCtxButtons.png)
+
+- **Outgoing Units Info on Map:** Icons added on the map to show outgoing units per village.
+  ![Outgoing Units Info on Map](img/largeMap2.png)
+
+### 🏰 Village & Overview Management
+- **Premium info Overview Screen:** Access additional details directly on the overview page, such as the time remaining for the storage to fill or the status of each individual resource. (In progress – replicating features typically available only to Premium users).
+  ![Overview Info](img/overviewExtraInfo.png)
+  ![Overview Info 2](img/overviewExtraInfo2.png)
+
 - **Arrows for Changing Villages:** Seamlessly navigate between villages using intuitive arrow controls.
-  
   ![Arrows for Changing Villages](img/navigationArrows.png)
 
 - **Village List for Easy Selection:** Quickly access a comprehensive list of villages for efficient selection.
-  
   ![Village List for Easy Selection](img/villageList.png)
 
 - **Notes for Each Village:** Stay organized by adding important notes to individual villages for easy reference.
-  
   ![Notes for Each Village](img/notepad.png)
 
-- **Extra Large Map:** Enjoy a larger map without premium. Toggle it on the map page and set the size freely—no limits!
-  
-  ![Extra Large Map](img/largeMap.png)
-
-- **Outgoing Units Info on Map:** Icons added on map to show outgoing units per village
-  
-  ![Outgoing Units Info on Map](img/largeMap2.png)
-
-- **Extra Village Information on Map Hover:** Gain valuable insights with additional village information displayed on map hover. Details include the last raid performed, resources detected in the last attack, date of the last attack, and ongoing attack or return.
-  
-  ![Extra Village Information on Map Hover](img/mapVillageHoverExtraInfo.png)
-
-- **Building queue:** Conveniently manage your building queue from the overview page by easily adding or removing buildings without navigating through multiple menus.
-  
-  ![Building queue](img/extraBuildQueue0.png)
-
-- **Extra Building Queue:** This feature expands the standard queue, allowing you to schedule more than two buildings at a time—similar to the premium option. You can disable it or use it solely for managing the in-game queue from the overview page.
-  - **Green**: The building is currently being upgraded.  
-  - **Orange**: The building is waiting for the next available slot (resources are available).  
-  - **Red**: The building is in the "fake" queue and will attempt to join the real queue once resources are available.  
-
-  **Note:** The browser must remain open for this feature to function. **Currently in bug fixing.**
-
-  
-  ![Extra Building queue](img/extraBuildQueue2.png)
-
-- **Navigation Bar:** Possibility of having a navigation bar, where you can add shortcuts to various pages. Similar to premium navbar. Currently, the shortcuts are hardcoded (you can edit them directly in the code).
-  ![Navigation Bar](img/navigationBar.png)
-
-- **Storage Fill Time on Resource Hover:** Monitor your resource storage more effectively by hovering over the resource bar, you can now see the estimated time remaining until each resource (wood, stone and iron) reaches maximum capacity. 
+- **Storage Fill Time on Resource Hover:** Monitor your resource storage effectively. Hover over the resource bar to see the estimated time remaining until wood, stone, and iron reach maximum capacity. 
   ![Storage Fill Time on Resource Hover](img/ressourceFullHover.png)
 
-- **Premium info Overview Screen:** Access additional details directly on the overview page, such as the time remaining for the storage to fill or the status of each individual resource. (In progress – i'm working on replicating features typically available only to Premium users.) CURRENTLY WITHOUT INDIVIDUAAL OPTIONS
-  ![Storage Fill Time on Resource Hover](img/overviewExtraInfo.png)
-  ![Storage Fill Time on Resource Hover](img/overviewExtraInfo2.png)
+### ⚙️ UI Customization & Settings
+- **Navigation Bar:** Custom navigation bar where you can add shortcuts to various pages. Shortcuts are currently hardcoded in the script.
+  ![Navigation Bar](img/navigationBar.png)
 
-- **Remove Premium Promos:** Remove advertising for premium promotions, like the examples:
-  
+- **Remove Premium Promos:** Clean up your UI by removing advertising for premium promotions.
   ![Remove Premium Promos](img/premium_promo.png)
   ![Remove Premium Promos](img/premium_promo2.png)
 
-- **Script Settings:** Customize your gameplay experience with in-game settings to control various aspects of the script. Adjust settings to suit your preferences and gameplay style. (More options will be added;)
-  
+- **Script Settings:** Customize your experience with in-game settings to control various aspects of the script. Adjust options to suit your gameplay style.
   ![Script Settings](img/scriptSettings.png)
 
-- **Auto Scavenging/Paladin Train:** Adds automation for training the Paladin (always choosing the cheapest option) and/or automating Scavenging (for now, using all available troops at the highest available level).
+### 🛠️ Building & Construction Queue
+- **Building Queue Manager:** Conveniently manage your building queue from the overview page by easily adding or removing buildings without navigating through multiple menus.
+  ![Building queue](img/extraBuildQueue0.png)
+
+- **Extra Building Queue (Infinite Queue):** Expands the standard queue, allowing you to schedule more than two buildings at a time—similar to the premium option. 
+  - **Green**: Building is currently being upgraded.  
+  - **Orange**: Waiting for the next slot (resources available).  
+  - **Red**: In the "fake" queue (waiting for resources).  
+  *Note: The browser must remain open for this feature to function.*
+  ![Extra Building queue](img/extraBuildQueue2.png)
+
+### 📊 Resources & Automation
+
+- **Auto Scavenging / Paladin Train:** Automation for training the Paladin (always choosing the cheapest option) and automating Scavenging (using all available troops at the highest available level).
 
 ## How to Use
 
@@ -127,6 +126,14 @@ These scripts are intended for use with Tampermonkey, a popular userscript manag
 - I doubt it works with different time formats...
 - Some information is retrieved via AJAX calls to the relevant pages. For example, village hover info (such as recent attack details) is scraped from the corresponding report page and displayed on the map.
 - I know this is basically spaghetti code, but I'm having a lot of fun getting it to work. I just wish my villages weren’t constantly being conquered—it makes it hard to test this with multiple villages. Maybe I should focus more on the game and less on the script!
-- Just a heads-up: I’m not responsible for any bans resulting from using this script. It’s meant for casual gameplay enhancement, not to provide an unfair advantage over other players.
 
 Enjoy the enhanced features while playing Tribalwars!
+
+
+## ⚠️ Disclaimer & Warning
+
+**Important:** Some features included in this script, specifically those involving automation (such as Auto-Scavenging, Auto-Train Paladin, and Extra Building Queue), may violate the Terms of Service (ToS) of certain TribalWars servers. 
+
+- **Use at your own risk:** I'm are not responsible for any bans or account restrictions.
+- **Fair Play:** I recommend using automation features sparingly and in a way that mimics human behavior to minimize the risk of detection.
+- **Check your server rules:** Always verify the local rules of your game world regarding scripts that perform automated actions or multiple actions with a single click.
