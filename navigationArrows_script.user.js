@@ -1,4 +1,4 @@
-// Villages Arrows
+// Village Arrows, Navigation Bar
 function getVillageLinkCurrentScreen(goToUrl) {
     var str = document.location.href,
         temp = str.indexOf("="),
@@ -45,13 +45,13 @@ function insertNavigationArrows() {
         var menu_row1_container = document.getElementById('menu_row2');
         var htmlToInject = '<td class="box-item icon-box separate arrowCell"><a id="village_switch_previous" class="village_switch_link" accesskey="a"><span class="arrowLeft" style="cursor:pointer;"> </span></a></td><td class="box-item icon-box arrowCell"><a id="village_switch_next" class="village_switch_link" accesskey="d"><span class="arrowRight" style="cursor:pointer;"> </span></a></td>';
 
-        menu_row1_container.innerHTML = htmlToInject + menu_row1_container.innerHTML;
+        if (menu_row1_container) menu_row1_container.innerHTML = htmlToInject + menu_row1_container?.innerHTML;
 
         var leftArrowContainer = document.getElementById('village_switch_previous');
-        var rightArrowContainer = document.getElementById('village_switch_next');
+        if (leftArrowContainer) leftArrowContainer.onclick = function () { previousVillage() };
 
-        leftArrowContainer.onclick = function () { previousVillage() };
-        rightArrowContainer.onclick = function () { nextVillage() };
+        var rightArrowContainer = document.getElementById('village_switch_next');
+        if (rightArrowContainer) rightArrowContainer.onclick = function () { nextVillage() };
     }
 }
 
@@ -101,7 +101,7 @@ function openVillageListPopup() {
 
     var popup = document.createElement("div");
     popup.id = "group_popup";
-    popup.className = "popup_style ui-draggable";
+    popup.className = "popup_style";
     popup.style.width = "320px";
     popup.style.position = "fixed";
     popup.style.top = "165.75px";
@@ -112,7 +112,7 @@ function openVillageListPopup() {
     // Criar o cabeçalho do popup
     var popupMenu = document.createElement("div");
     popupMenu.id = "group_popup_menu";
-    popupMenu.className = "popup_menu ui-draggable-handle";
+    popupMenu.className = "popup_menu";
     popupMenu.innerHTML = lang['49f8eff5b37c62212f0b7870b07af7bb'];
 
     var closeLink = document.createElement("a");
@@ -199,7 +199,7 @@ function openVillageListPopup() {
     var headerTh = document.createElement("th");
     headerTh.className = "group_label";
     headerTh.colSpan = "2";
-    headerTh.textContent = "Aldeia";
+    headerTh.textContent =  lang['abc63490c815af81276f930216c8d92b'] ?? "Village";
 
     headerRow.appendChild(headerTh);
     tbody.appendChild(headerRow);
@@ -245,7 +245,6 @@ function openVillageListPopup() {
 
     document.body.appendChild(popupHelper);
 }
-
 
 function injectNavigationBar() {
     if (settings_cookies.general['show__navigation_bar']) {
@@ -360,7 +359,7 @@ function injectNavigationBar() {
         editIcon.style.float = "right"; // Mantém o ícone o mais à direita possível
         editIcon.title = "Edit Navigation Bar";
         editIcon.addEventListener("click", function () {
-            alert("Editar navegação (ação futura)"); // Aqui podes substituir pelo código de edição real
+            alert("TBD - implement edit navigation items"); // Aqui podes substituir pelo código de edição real
         });
 
         // Adicionar o ícone na célula da direita

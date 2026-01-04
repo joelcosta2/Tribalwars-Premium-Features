@@ -28,7 +28,7 @@ function injectBuildQueue(availableBuildingsImgs, buildingImgs, availableBuildin
         var buildLvel = url.match(/([^\/]+?)(?=\.\w+$)/)[1];
         var row = document.createElement('tr');
         row.id = 'main_buildrow_' + index;
-        
+
         // get next level
         let nextLevel = parseInt(availableBuildingLevels[index]) + 1;
         const buildingQueue = JSON.parse(localStorage.getItem('building_queue')) || [];
@@ -37,7 +37,7 @@ function injectBuildQueue(availableBuildingsImgs, buildingImgs, availableBuildin
         const activeQueuedCount = buildingActiveQueue.filter(id => id.replace(/\d+/g, '') === buildId).length;
         nextLevel += queuedBuilding || 0;
         nextLevel += activeQueuedCount || 0;
-        
+
         const canAddToQueue = buildingImgs.includes(url) && buildingQueue.length === 0;
 
         var cell = document.createElement('td');
@@ -68,8 +68,8 @@ function injectBuildQueue(availableBuildingsImgs, buildingImgs, availableBuildin
         var upgradeLink = document.createElement('a');
         upgradeLink.className = canAddToQueue ? 'btn btn-build' : 'btn evt-cancel-btn btn-confirm-no';
         upgradeLink.setAttribute('data-building', (buildId + nextLevel));
-        upgradeLink.setAttribute('data-level-next', nextLevel );
-        
+        upgradeLink.setAttribute('data-level-next', nextLevel);
+
         upgradeLink.id = 'main_buildlink_' + buildId + '_' + nextLevel;
         upgradeLink.style.width = '-webkit-fill-available';
         upgradeLink.style.margin = '0';
@@ -79,7 +79,7 @@ function injectBuildQueue(availableBuildingsImgs, buildingImgs, availableBuildin
         upgradeLink.onclick = function () {
             addToBuildQueue(buildId);
         }
-        
+
         upgradeLink.addEventListener('mouseenter', function (event) {
             toggleTooltip(event.target, true);
         });
@@ -88,9 +88,9 @@ function injectBuildQueue(availableBuildingsImgs, buildingImgs, availableBuildin
         });
 
         var upgradeCell = document.createElement('td');
-        const dataText = canAddToQueue ? 
-                    'Add to queue' + createResourceElementsString(buildId) : 
-                    'Add to waiting queue' + (!queuedBuilding ? createResourceElementsString(buildId) : '<div>no info, build alreday in waiting queue</div>');
+        const dataText = canAddToQueue ?
+            'Add to queue' + createResourceElementsString(buildId) :
+            'Add to waiting queue' + (!queuedBuilding ? createResourceElementsString(buildId) : '<div>no info, build alreday in waiting queue</div>');
         upgradeCell.setAttribute('data-title', dataText);
         upgradeCell.appendChild(upgradeLink);
 
@@ -169,7 +169,7 @@ function getCurrentQueueListElement(tempElement, allBuildingsImgs) {
 
 function createResourceElementsString(buildId) {
     const storedData = localStorage.getItem('nextLevelBuildsQueueInfo');
-    if (!storedData) return ''; 
+    if (!storedData) return '';
 
     const buildingsData = JSON.parse(storedData);
     const buildInfo = buildingsData[buildId];
@@ -184,7 +184,7 @@ function createResourceElementsString(buildId) {
         wrapper.appendChild(span);
         wrapper.appendChild(textNode);
         wrapper.style.marginRight = '1px';
-        
+
         return wrapper.outerHTML;
     }
 
@@ -193,9 +193,9 @@ function createResourceElementsString(buildId) {
         createSpan("stone", buildInfo.stone) +
         createSpan("iron", buildInfo.iron) +
         `<div>` +
-            createSpan("time", buildInfo.time) +
-            (buildInfo.population ? createSpan("population", buildInfo.population) : '') +
-        `</div>`+
+        createSpan("time", buildInfo.time) +
+        (buildInfo.population ? createSpan("population", buildInfo.population) : '') +
+        `</div>` +
         `</div>`
     );
 }
@@ -208,35 +208,35 @@ function injectAtiveQueueList(queueBuildIdsActive, buildQueueElment) {
             anchor.className = '';
             anchor.style.display = 'inline-flex';
             anchor.setAttribute('data-title', `<span class='warn_90'>Cancel build</span>`);
-            
+
             function updateCountdown(event) {
                 const now = Date.now();
                 //const remainingTime = (index == 0 ? parseInt(localStorage.getItem('building_queue_next_slot')) : parseInt(localStorage.getItem('building_queue_last_slot'))) - now;
                 const remainingTime = parseInt(localStorage.getItem('building_queue_next_slot')) - now;
-        
+
                 if (remainingTime <= 0) {
                     anchor.setAttribute('data-title', 'Construção concluída!');
                     return; // Para a contagem quando chegar a zero
                 }
-        
+
                 const seconds = Math.floor((remainingTime / 1000) % 60);
                 const minutes = Math.floor((remainingTime / 1000 / 60) % 60);
                 const hours = Math.floor((remainingTime / 1000 / 60 / 60) % 24);
                 const days = Math.floor(remainingTime / 1000 / 60 / 60 / 24);
-        
-                const formattedCountdown = 
+
+                const formattedCountdown =
                     (days > 0 ? `${days}d ` : '') +
                     (hours > 0 ? `${hours}h ` : '') +
                     (minutes > 0 ? `${minutes}m ` : '') +
                     `${seconds}s`;
-        
-                    if (index == 0) {
-                        anchor.setAttribute('data-title', `<span class='warn_90'>Cancel build</span></br> ${formattedCountdown}`); 
-                    } else {
-                        anchor.setAttribute('data-title', `<span class='warn_90'>Cancel build</span></br> Starts in ${formattedCountdown}`); 
-                    }
+
+                if (index == 0) {
+                    anchor.setAttribute('data-title', `<span class='warn_90'>Cancel build</span></br> ${formattedCountdown}`);
+                } else {
+                    anchor.setAttribute('data-title', `<span class='warn_90'>Cancel build</span></br> Starts in ${formattedCountdown}`);
+                }
                 toggleTooltip(event.target, true);
-        
+
                 event.target.countdownTimeout = setTimeout(() => updateCountdown(event), 1000);
             }
 
@@ -257,7 +257,7 @@ function injectAtiveQueueList(queueBuildIdsActive, buildQueueElment) {
             span.style.position = 'relative';
             span.style.display = 'inline-block';
             span.style.cursor = 'pointer';
-            
+
             span.addEventListener('mouseenter', function (event) {
                 toggleTooltip(event.target, true);
                 updateCountdown(event)
@@ -319,14 +319,14 @@ function injectFakeQueueList(queueBuildIdsActive, buildQueueElment, allBuildings
             progressBar.style.backgroundColor = 'orange';
 
             span.appendChild(progressBar);
-            
+
             span.addEventListener('mouseenter', function (event) {
                 toggleTooltip(event.target, true);
             });
             span.addEventListener('mouseleave', function (event) {
                 toggleTooltip(event.target, false);
             });
-            
+
 
             anchor.appendChild(span);
             buildQueueElment.appendChild(anchor);
@@ -342,7 +342,7 @@ function injectQueues(mainElement, update) {
         localStorage.setItem('last_main_page', mainElement);
         var { availableBuildingsImgs, availableBuildingLevels, allBuildingsImgs, allAvailableBuildingLevels } = getAllBuildingsImages(tempElement);
         var buildQueueElment = getCurrentQueueListElement(tempElement, allBuildingsImgs);
-    
+
         if (settings_cookies.general['show__building_queue_all']) {
             injectBuildQueue(allBuildingsImgs, availableBuildingsImgs, allAvailableBuildingLevels, buildQueueElment, update);
         } else {
@@ -415,9 +415,9 @@ function addToBuildQueue(build_id) {
             var building_queue = JSON.parse(localStorage.getItem('building_queue') || '[]');
             building_queue.push(build_id)
             localStorage.setItem('building_queue', JSON.stringify(building_queue));
-            
+
             updateBuildQueueTimers();
-            
+
             const mainElement = localStorage.getItem('last_main_page');
             if (mainElement) {
                 injectQueues(mainElement, true);
@@ -459,7 +459,7 @@ async function removeFromActiveBuildQueue(build_index) {
         var building_active_queue = JSON.parse(localStorage.getItem('building_queue_active'));
         building_active_queue.splice(build_index, 1);
         localStorage.setItem('building_queue_active', JSON.stringify(building_active_queue));
-    
+
         if (build_index === 0) {
             localStorage.setItem('building_queue_active', JSON.stringify({}));
         }
@@ -490,17 +490,17 @@ function callUpgradeBuilding(id) {
             building_queue.shift();
             localStorage.setItem('building_queue', JSON.stringify(building_queue || []));
             localStorage.setItem('waiting_for_queue', JSON.stringify({}));
-            if (isError !== null  || !main) {
+            if (isError !== null || !main) {
                 var missingRessourceBuildRow = tempElement.querySelector('#main_buildrow_' + id + ' .inactive');
                 if (missingRessourceBuildRow) {
                     var timeAvailable = extractBuildTimeFromHTML(missingRessourceBuildRow.textContent);
                 }
-                
+
                 if (timeAvailable) {
-                    showAutoHideBox('Added to queue at ' + (timeAvailable[0] == '0' ? 'Today' : 'Tomorrow' ) + ' @ ' + timeAvailable[1] + ':' + timeAvailable[2]);
+                    showAutoHideBox('Added to queue at ' + (timeAvailable[0] == '0' ? 'Today' : 'Tomorrow') + ' @ ' + timeAvailable[1] + ':' + timeAvailable[2]);
                     if (timeAvailable[0]) {
                         var waiting_for_queue_temp = { buildId: id, time: timeAvailable };
-                        
+
                         localStorage.setItem('waiting_for_queue', JSON.stringify(waiting_for_queue_temp));
                         building_queue = JSON.parse(localStorage.getItem('building_queue'));
                         building_queue.unshift(id);

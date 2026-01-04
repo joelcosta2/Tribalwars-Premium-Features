@@ -7,7 +7,7 @@ function saveScriptSettings() {
     for (var i = 0; i < allSettings.length; i++) {
         var settingName = allSettings[i].name;
         var settingValue = allSettings[i].type === "checkbox" ? allSettings[i].checked : parseInt(allSettings[i].value, 10);
-        
+
         var parts = settingName.split("__");
 
         // Verifica se a configuração tem extraSettings
@@ -20,7 +20,7 @@ function saveScriptSettings() {
             var childKey = parts[2];
 
             if (!settings_cookies.general[parentKey] || typeof settings_cookies.general[parentKey] !== "object") {
-                settings_cookies.general[parentKey] = {};  
+                settings_cookies.general[parentKey] = {};
             }
 
             settings_cookies.general[parentKey][childKey] = settingValue;
@@ -67,7 +67,7 @@ function injectScriptSettingsButtom(maincell) {
         questIcon.addEventListener('mouseleave', () => questIcon.style.opacity = '1');
 
         settingsPopupButton.appendChild(questIcon);
-        questLogElem[0].appendChild(settingsPopupButton);
+        questLogElem[0]?.appendChild(settingsPopupButton);
     } else {
         var settingsPopupButton = document.createElement('div');
         settingsPopupButton.id = 'settings_popup_button';
@@ -168,16 +168,16 @@ function createTabNavigation() {
 function createTabs(tabNav) {
     var tabButtons = [];
     var tabContents = [];
-    
+
     var settingsGroups = getSettingsGroups();
-    
+
     Object.keys(settingsGroups).forEach((groupName, index) => {
         var tabButton = createTabButton(groupName, index, tabButtons, tabContents);
         var tabContent = createTabContent(groupName, index);
-        
+
         tabButtons.push(tabButton);
         tabContents.push(tabContent);
-        
+
         tabNav.appendChild(tabButton);
     });
 
@@ -188,10 +188,12 @@ function createTabButton(groupName, index, tabButtons, tabContents) {
     var tabButton = document.createElement('button');
     tabButton.textContent = groupName;
     tabButton.id = `tabButton_${groupName.replace(/\s/g, "_")}`;
+
     Object.assign(tabButton.style, {
         padding: '0',
         border: 'none',
         cursor: 'pointer',
+        padding: '4px',
         background: index === 0 ? '#c1a264' : '#f4e4bc',
         border: index === 0 ? '1px solid #7d510f' : 'none',
         flex: '1'
@@ -223,7 +225,7 @@ function createTabContent(groupName, index) {
     var tabContent = document.createElement('div');
     tabContent.id = `tabContent_${groupName.replace(/\s/g, "_")}`;
     tabContent.style.display = index === 0 ? 'block' : 'none';
-    
+
     var tableElement = document.createElement('table');
     tableElement.classList.add('vis');
     tableElement.style.width = '100%';
@@ -238,6 +240,7 @@ function createTabContent(groupName, index) {
 
             cell1.textContent = setting.label;
             cell1.style.fontWeight = 'bold';
+            cell1.style.padding = '8px';
 
             var label = document.createElement('label');
             var input = document.createElement('input');
@@ -249,7 +252,9 @@ function createTabContent(groupName, index) {
 
             label.appendChild(input);
             label.appendChild(document.createTextNode(setting.description));
+
             cell2.appendChild(label);
+            cell2.style.padding = '0 5px';
 
             // Se houver extraSettings, adicionamos dinamicamente
             if (setting.extraSettings) {
@@ -257,13 +262,13 @@ function createTabContent(groupName, index) {
                     let extraRow = tableElement.insertRow();
                     let extraCell1 = extraRow.insertCell(0);
                     let extraCell2 = extraRow.insertCell(1);
-                    
+
                     extraCell1.textContent = setting.extraSettings[extraKey].label;
-                    
+
                     let extraInput = document.createElement('input');
                     extraInput.type = setting.extraSettings[extraKey].type;
                     extraInput.name = `${setting.name}__${extraKey}`;
-                    
+
                     let savedValue = settings_cookies.general[setting.name]?.[extraKey];
                     extraInput.value = savedValue !== undefined ? savedValue : setting.extraSettings[extraKey].default;
 
@@ -305,29 +310,30 @@ function createSaveButton() {
 
 var availableSettings = [
     { "name": "keep_awake", "label": "Keep Awake", "description": "Refreshes the page after 5 minutes of inactivity." },
-    { "name": "redirect__train_buildings", "label": "Redirect Train Buildings", "description": "All buildings used for training purposes redirect directly to the train screen."},
+    { "name": "redirect__train_buildings", "label": "Redirect Train Buildings", "description": "All buildings used for training purposes redirect directly to the train screen." },
     { "name": "show__navigation_arrows", "label": "Use Navigation Arrows", "description": "Enables navigation arrows for easier switch between villages." },
 
-    { "name": "show__village_list", "label": "Village List Widget", "description": "Displays the village list widget on the overview screen." },
-    { "name": "show__recruit_troops", "label": "Recruitment Widget", "description": "Displays a widget to recruit troops on overview page (NOT FULLY IMPLEMENTED)" },
-    { "name": "show__notepad", "label": "Notepad Widget", "description": "Displays a notepad widget for taking notes (per village)." },
-    { "name": "show__building_queue", "label": "Building Queue Widget", "description": "Displays the building queue and available upgrades on the overview page. Allows adding/removing buildings to the queue from the overview screen." },
-    { "name": "show__building_queue_all", "label": "All Buildings in Queue", "description": "Displays all buildings in the queue, including those that cannot be upgraded due to a lack of resources or a full queue and allows to use the fake building queue. Requires the browser to be open. (IN TESTING)" },
-    
-    { "name": "show__extra_options_map_hover", "label": "Show Extra Map Hover Info", "description": "Displays additional info when hovering over a village on the map." },
-    { "name": "show__outgoingInfo_map", "label": "Show Outgoing Commands Info", "description": "Displays additional info about outgoing units per village." },
+    { "name": "show__village_list", "label": "Village List Widget", "description": "Display the village list widget on the overview screen." },
+    { "name": "show__recruit_troops", "label": "Recruitment Widget", "description": "Display a widget to recruit troops on overview page (NOT FULLY IMPLEMENTED)" },
+    { "name": "show__notepad", "label": "Notepad Widget", "description": "Display a notepad widget for taking notes (per village)." },
+    { "name": "show__building_queue", "label": "Building Queue Widget", "description": "Display the building queue and available upgrades on the overview page. Allows adding/removing buildings to the queue from the overview screen." },
+    { "name": "show__building_queue_all", "label": "All Buildings in Queue", "description": "Display all buildings in the queue, including those that cannot be upgraded due to a lack of resources or a full queue and allows to use the fake building queue. Requires the browser to be open. (IN TESTING)" },
 
-    { "name": "show__overview_premmium_info", "label": "Displays Premium overview information", "description": "Displays additional premium information for buildings, similar to what we get with premium (graphical overview)" },
-    { "name": "show__navigation_bar", "label": "Navigation Bar", "description": "Displays the navigation bar at the top of the screen." },
-    { "name": "show__time_storage_full_hover", "label": "Show Time Until Full Storage on Hover", "description": "Displays the remaining time until storage is full when hovering over a resource." },
-    
+    { "name": "show__extra_options_map_hover", "label": "Show Extra Map Hover Info", "description": "Display additional info when hovering over a village on the map." },
+    { "name": "show__outgoingInfo_map", "label": "Show Outgoing Commands Info", "description": "Display additional info about outgoing units per village." },
+
+    { "name": "show__overview_premmium_info", "label": "Display Premium overview information", "description": "Display additional premium information for buildings, similar to what we get with premium (graphical overview)" },
+    { "name": "show__navigation_bar", "label": "Navigation Bar", "description": "Display the navigation bar at the top of the screen." },
+    { "name": "show__time_storage_full_hover", "label": "Show Time Until Full Storage on Hover", "description": "Display the remaining time until storage is full when hovering over a resource." },
+
     { "name": "show__auto_scavenging", "label": "Enable Auto Scavenging", "description": "Automatically manages scavenging tasks. Requires the browser to be open." },
-    { "name": "show__auto_paladin_train", "label": "Enable Auto Paladin Training", "description": "Automatically trains paladins. Requires the browser to be open.", 
-        "extraSettings": { 
+    {
+        "name": "show__auto_paladin_train", "label": "Enable Auto Paladin Training", "description": "Automatically trains paladins. Requires the browser to be open.",
+        "extraSettings": {
             "maxLevel": { "label": "Train Paladin until level:", "type": "number", "default": 0 },
         }
     },
-    
+
     { "name": "remove__premium_promo", "label": "Remove Premium Promos", "description": "Removes premium promotional content from all pages." }
     // Add more settings as needed
 ];

@@ -287,7 +287,7 @@ function setOngoingBuildingLevels() {
     var buildingQueueActive = JSON.parse(localStorage.getItem("building_queue_active"));
     var buildIds = buildingQueueActive ? buildingQueueActive.map(item => item.replace(/[0-9]/g, '')) : [];
     var fakeBuildingQueue = JSON.parse(localStorage.getItem("building_queue"));
-    var fakeBuildIds = fakeBuildingQueue ? fakeBuildingQueue.map(item => item.replace(/[0-9]/g, '')) : [];
+    var fakeBuildIds = fakeBuildingQueue ? fakeBuildingQueue.map(item => item?.replace(/[0-9]/g, '')) : [];
 
     document.querySelectorAll('.order-level').forEach(el => el.textContent = '');
     Object.keys(infoOverview).forEach(key => {
