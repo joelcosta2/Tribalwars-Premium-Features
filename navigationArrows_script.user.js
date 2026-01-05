@@ -163,13 +163,13 @@ function openVillageListPopup() {
     // 1. Toggle: If it exists, remove it and stop
     const existing = document.getElementById("group_popup");
     if (existing) {
-        existing.closest('.popup_helper')?.remove();
+        existing.closest('.popup_helper_village_list')?.remove();
         return;
     }
 
     // 2. Create Elements
     const popupHelper = document.createElement("div");
-    popupHelper.className = "popup_helper";
+    popupHelper.className = "popup_helper_village_list";
 
     const popup = Object.assign(document.createElement("div"), {
         id: "group_popup",
@@ -262,42 +262,193 @@ function openVillageListPopup() {
     document.body.appendChild(popupHelper);
 }
 
+function openNavEditorPopup() {
+    // 1. Verificar se já existe e remover
+    const existing = document.querySelector(".popup_helper_editor");
+    if (existing) {
+        existing.remove();
+        return;
+    }
+
+    // 2. Criar o Overlay (Fundo escuro)
+    const popupHelper = Object.assign(document.createElement("div"), {
+        className: "popup_helper popup_helper_editor",
+        style: "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; display: block;"
+    });
+
+    // 3. Criar o Container do Popup
+    const popup = Object.assign(document.createElement("div"), {
+        id: "nav_editor_popup",
+        className: "popup_style",
+        style: "position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 600px; z-index: 10001; display: block;"
+    });
+
+    // 4. Cabeçalho
+    const popupMenu = Object.assign(document.createElement("div"), {
+        className: "popup_menu",
+        innerHTML: "<strong>Navigation Items</strong>",
+        style: "cursor: default;"
+    });
+
+    const closeBtn = Object.assign(document.createElement("a"), {
+        href: "#",
+        innerText: "X",
+        style: "float: right; cursor: pointer; font-weight: bold; text-decoration: none;"
+    });
+    closeBtn.onclick = (e) => { e.preventDefault(); popupHelper.remove(); };
+    popupMenu.appendChild(closeBtn);
+
+    // 5. Conteúdo
+    const popupContent = Object.assign(document.createElement("div"), {
+        className: "popup_content",
+        style: "padding: 15px; background: #f4e4bc; max-height: 450px; overflow-y: auto;"
+    });
+
+    const table = Object.assign(document.createElement("table"), {
+        className: "vis",
+        style: "width: 100%; border-collapse: collapse;"
+    });
+
+    table.innerHTML = `
+        <thead>
+            <tr>
+                <th style="text-align:left;">Name</th>
+                <th style="text-align:left;">URL</th>
+                <th style="text-align:left;">Icon (URL)</th>
+                <th style="width: 30px;"></th>
+            </tr>
+        </thead>
+        <tbody id="nav_editor_body"></tbody>
+    `;
+
+    // Função para adicionar linha
+    const addRow = (item = { name: '', href: '', img: '' }) => {
+        const tbody = document.getElementById('nav_editor_body');
+        if (!tbody) return;
+
+        const row = tbody.insertRow();
+
+        row.innerHTML = `
+        <td><input type="text" class="nav-name" value="${item.name}" style="width: 100px; font-size:12px"></td>
+        <td><input type="text" class="nav-href" value="${item.href}" style="width: 180px; font-size:12px" placeholder="/game.php?screen=..."></td>
+        <td><input type="text" class="nav-img" value="${item.img}" style="width: 180px; font-size:12px" placeholder="ex: unit/att.png"></td>
+        <td style="text-align:center;">
+            <span class="delete-icon-large hint-toggle" 
+                  style="cursor:pointer;" 
+                  data-title="${lang['1063e38cb53d94d386f21227fcd84717'] ?? 'Remove'}">
+            </span>
+        </td>
+    `;
+
+        const deleteBtn = row.querySelector('.delete-icon-large');
+
+        // 1. Evento de Clique para remover a linha
+        deleteBtn.onclick = () => {
+            // Importante: Esconder o tooltip antes de remover o elemento do DOM
+            // para evitar que o tooltip fique "pendurado" na tela
+            if (typeof toggleTooltip === 'function') toggleTooltip(deleteBtn, false);
+            row.remove();
+        };
+
+        // 2. Eventos de Hover para o Tooltip
+        if (typeof toggleTooltip === 'function') {
+            deleteBtn.onmouseenter = () => toggleTooltip(deleteBtn, true);
+            deleteBtn.onmouseleave = () => toggleTooltip(deleteBtn, false);
+        }
+    };
+
+    popupContent.appendChild(table);
+
+    // 6. Botões de Controlo
+    const footer = document.createElement("div");
+    footer.style.marginTop = "15px";
+    footer.style.display = "flex";
+    footer.style.justifyContent = "space-between";
+
+    const addBtn = Object.assign(document.createElement("button"), {
+        className: "btn",
+        innerText: lang['ee251fffae6371d31aa2d3f958b76353'] ?? 'Add new'
+    });
+    addBtn.onclick = () => addRow();
+
+    const saveBtn = Object.assign(document.createElement("button"), {
+        className: "btn btn-confirm",
+        innerText: lang['c9cc8cce247e49bae79f15173ce97354'] ?? 'Save Changes'
+    });
+    saveBtn.onclick = () => {
+        const newItems = [];
+        document.querySelectorAll('#nav_editor_body tr').forEach(tr => {
+            const name = tr.querySelector('.nav-name').value;
+            if (name.trim()) {
+                newItems.push({
+                    name: name,
+                    href: tr.querySelector('.nav-href').value,
+                    img: tr.querySelector('.nav-img').value
+                });
+            }
+        });
+
+        // Save data
+        localStorage.setItem('nav_shortcuts', JSON.stringify(newItems));
+        window.location.reload();
+    };
+
+    footer.append(addBtn, saveBtn);
+    popupContent.appendChild(footer);
+
+    // 7. Montagem Final
+    popup.append(popupMenu, popupContent);
+    popupHelper.appendChild(popup);
+    document.body.appendChild(popupHelper);
+
+    // Fechar ao clicar no fundo
+    popupHelper.onclick = (e) => { if (e.target === popupHelper) popupHelper.remove(); };
+
+    // Carregar dados existentes
+    const savedData = JSON.parse(localStorage.getItem('nav_shortcuts') || "[]");
+    if (savedData.length > 0) {
+        savedData.forEach(item => addRow(item));
+    } else {
+        addRow(); // Adiciona uma linha vazia por defeito
+    }
+}
+
 /**
  * Injects a custom navigation bar (Quickbar) into the game interface.
  */
 function injectNavigationBar() {
     if (!settings_cookies.general?.['show__navigation_bar']) return;
 
-    const tw_lang = JSON.parse(localStorage.getItem('tw_lang') || '{}');
     const villageId = game_data.village.id;
+    const assetBase = "https://dspt.innogamescdn.com/asset/7fe7ab60/graphic/";
 
-    // Define Navigation Items
-    const navItems = {
-        "Main": { img: "buildings/mid/main3.png", href: `/game.php?village=${villageId}&screen=main` },
-        "Recruitment": { img: "unit/att.png", href: `/game.php?village=${villageId}&screen=train` },
-        "Smith": { img: "buildings/mid/smith2.png", href: `/game.php?village=${villageId}&screen=smith` },
-        "Place": { img: "buildings/mid/place1.png", href: `/game.php?village=${villageId}&screen=place` },
-        [tw_lang["52e136b31c4cc30c8f3d9eeb8dc56013"] || "Scavenge"]: {
-            img: "scavenging/options/3.png",
-            href: `/game.php?village=${villageId}&screen=place&mode=scavenge`
-        },
-        "Del Misc Reports": {
-            img: "delete.png",
-            run: async () => {
-                try {
-                    const url = `${game_data.link_base_pure}report&action=del_all&mode=other&h=${game_data.csrf}`;
-                    const res = await fetch(url, { credentials: "include" });
-                    showAutoHideBox(res.ok ? 'Misc reports deleted' : 'Error deleting reports', !res.ok);
-                } catch (e) { showAutoHideBox('Network Error', true); }
-            }
-        },
-        "Quests": {
-            img: "quests_new/quest_icon.png",
-            run: () => Questlines.showDialog(0, 'main-tab')
-        }
+    // 1. Hardcoded Script Functions
+    const scriptActions = {
+
     };
 
-    // Construct the Table Shell using Template Literals
+    // 2. Load User Links from LocalStorage
+    const customShortcuts = JSON.parse(localStorage.getItem('nav_shortcuts') || "[]");
+
+    // 3. Default Items (Used only if LocalStorage is empty)
+    const defaultItems = [
+        { name: "Main", img: "buildings/mid/main3.png", href: `/game.php?village=${villageId}&screen=main` },
+        { name: "Train", img: "unit/att.png", href: `/game.php?village=${villageId}&screen=train` },
+        { name: "Smith", img: "buildings/mid/smith2.png", href: `/game.php?village=${villageId}&screen=smith` }
+    ];
+
+    // 4. Merge Logic
+    // Convert scripts into list items and combine with user items
+    const scriptItems = Object.keys(scriptActions).map(key => ({
+        name: key,
+        img: scriptActions[key].img,
+        actionKey: key
+    }));
+
+    const userItems = customShortcuts.length > 0 ? customShortcuts : defaultItems;
+    const finalItems = [...userItems, ...scriptItems];
+
+    // --- DOM Construction ---
     const tableHTML = `
         <table id="quickbar_outer" align="center" width="100%" cellspacing="0">
             <tbody>
@@ -311,7 +462,7 @@ function injectNavigationBar() {
                                     <ul id="script_quickbar_ul" class="menu quickbar"></ul>
                                 </td>
                                 <td class="right" style="padding: 0 5px;">
-                                    <img id="nav_edit_icon" src="graphic/plus.png" class="navbar-edit-icon" title="Edit Navigation Bar">
+                                    <img id="nav_edit_icon" src="graphic/plus.png" class="navbar-edit-icon" title="Edit Navigation Bar" style="cursor:pointer">
                                 </td>
                             </tr>
                             <tr class="bottomborder"><td class="left"></td><td class="main"></td><td class="right"></td></tr>
@@ -324,38 +475,40 @@ function injectNavigationBar() {
 
     const target = document.querySelector('.newStyleOnly');
     if (!target) return;
-
     target.insertAdjacentHTML('afterend', tableHTML);
 
-    // Populate List Items
+    // 5. Populate the UI
     const ul = document.getElementById('script_quickbar_ul');
-    const assetBase = "https://dspt.innogamescdn.com/asset/7fe7ab60/graphic/";
 
-    Object.entries(navItems).forEach(([name, data], index) => {
+    finalItems.forEach(item => {
         const li = document.createElement('li');
         li.className = 'quickbar_item';
 
         const link = Object.assign(document.createElement('a'), {
             className: 'quickbar_link',
-            href: data.href || "#"
+            href: item.href || "#"
         });
 
-        if (data.run) {
-            link.onclick = (e) => { e.preventDefault(); data.run(); };
+        // Event Handling: If item has an actionKey, run the script instead of navigating
+        if (item.actionKey && scriptActions[item.actionKey]) {
+            link.onclick = (e) => {
+                e.preventDefault();
+                scriptActions[item.actionKey].run();
+            };
         }
 
         const img = Object.assign(document.createElement('img'), {
             className: 'navbar-icon',
-            src: data.img.startsWith('http') ? data.img : assetBase + data.img
+            src: item.img.startsWith('http') ? item.img : assetBase + item.img,
+            style: "width: 18px; height: 18px; margin-right: 4px; vertical-align: middle;"
         });
 
-        link.append(img, name);
+        link.append(img, `${item.name}`);
         li.appendChild(link);
         ul.appendChild(li);
     });
 
-    // Attach Edit Event
-    document.getElementById('nav_edit_icon').onclick = () => alert("TBD - Edit logic");
+    document.getElementById('nav_edit_icon').onclick = openNavEditorPopup;
 }
 
 //delete premium promotion

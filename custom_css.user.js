@@ -45,7 +45,7 @@ var customCSS = `
 }
 
 .warn_90 {
-    color: red;
+    color: #c61212;
 }
 
 .village-duration, .village-caries, .village-arrive {
@@ -112,7 +112,7 @@ var customCSS = `
     padding-right: 3px;
 }
 
-.popup_helper {
+.popup_helper_village_list {
     position: fixed;
     top: 0;
     left: 0;
@@ -141,6 +141,10 @@ var customCSS = `
     font-weight: bold;
     width: 100px;
     text-align: right;
+}
+
+.popup_menu {
+    cursor: unset;
 }
 
 .popup_menu a#closelink_group_popup {
