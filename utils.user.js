@@ -77,12 +77,12 @@ var currentVillageIndex,
     textSelected,
     isBuildQueueFull = false;
 
+//-----
+
 function prepareLocalStorageItems() {
     if (unsafeWindow.lang) {
         localStorage.setItem('tw_lang', JSON.stringify(unsafeWindow.lang));
     }
-
-
 
     localStorage.setItem('waiting_for_queue', localStorage.getItem('waiting_for_queue') ?? '{}');
     localStorage.setItem('building_queue', localStorage.getItem('building_queue') ?? '[]');
@@ -391,6 +391,8 @@ function injectScriptColumn() {
     }
 }
 
+// allows to show/hide tooltip element from TW
+// reads info from data-title and data-tooltip-tpl
 function toggleTooltip(element, isVisible) {
     var rect = element.getBoundingClientRect();
     var scrollTop = window.pageYOffset || document.documentElement.scrollTop;
@@ -416,14 +418,19 @@ function toggleTooltip(element, isVisible) {
         const data_title = element.parentNode.getAttribute('data-title') ?? element.getAttribute('data-title');
         const data_tooltip = element.parentNode.getAttribute('data-tooltip-tpl') ?? element.getAttribute('data-tooltip-tpl');
 
-        if (data_title) {
+        if (data_title && data_tooltip) {
+            h3.innerHTML = data_title;
+            h3.style.display = 'block'
+            body.innerHTML = data_tooltip;
+            body.style.display = 'block'
+        } else if (data_title) {
             h3.innerHTML = data_title;
             h3.style.display = 'block'
             body.innerHTML = '';
         } else if (data_tooltip) {
-            h3.innerHTML = '';
             body.innerHTML = data_tooltip;
             body.style.display = 'block'
+            h3.innerHTML = '';
         }
     } else {
         h3.innerHTML = '';
@@ -750,7 +757,7 @@ function convertBBCodeToHTML(text) {
     return text;
 }
 
-async function updateMapInfoVillages() {
+async function updateMapInfoVillages(force = false) {
     const STORAGE_KEY = 'map_villages';
     const TIMESTAMP_KEY = 'map_villages_last_update';
     const ONE_HOUR = 60 * 60 * 1000; // 1 hour in milliseconds
@@ -759,7 +766,7 @@ async function updateMapInfoVillages() {
     const now = Date.now();
 
     // Check if we already have data and if it's still "fresh" (less than 1 hour old)
-    if (lastUpdate && (now - lastUpdate < ONE_HOUR) && localStorage.getItem(STORAGE_KEY)) {
+    if (!force && (lastUpdate && (now - lastUpdate < ONE_HOUR) && localStorage.getItem(STORAGE_KEY))) {
         console.log("Map villages data is up to date (less than 1h old).");
         return;
     }

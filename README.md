@@ -39,8 +39,9 @@ To optimize your workflow, the script injects a persistent sidebar on the left s
   ![Storage Fill Time on Resource Hover](img/ressourceFullHover.png)
 
 ### ⚙️ UI Customization & Settings
-- **Navigation Bar:** Custom navigation bar where you can add shortcuts to various pages. Shortcuts are currently hardcoded in the script.
+- **Navigation Bar:** Custom navigation bar where you can add shortcuts to various pages. Shortcuts can be edited.
   ![Navigation Bar](img/navigationBar.png)
+  ![Navigation Bar Edit](img/navigationBar_items.png)
 
 - **Remove Premium Promos:** Clean up your UI by removing advertising for premium promotions.
   ![Remove Premium Promos](img/premium_promo.png)

@@ -88,10 +88,14 @@ function injectBuildQueue(availableBuildingsImgs, buildingImgs, availableBuildin
         });
 
         var upgradeCell = document.createElement('td');
+        const dataTitle = canAddToQueue ?
+            'Add to queue' :
+            'Add to waiting queue';
         const dataText = canAddToQueue ?
-            'Add to queue' + createResourceElementsString(buildId) :
-            'Add to waiting queue' + (!queuedBuilding ? createResourceElementsString(buildId) : '<div>no info, build alreday in waiting queue</div>');
-        upgradeCell.setAttribute('data-title', dataText);
+            createResourceElementsString(buildId) :
+            (!queuedBuilding ? createResourceElementsString(buildId) : '<div>no info, build already in waiting queue</div>');
+        upgradeCell.setAttribute('data-title', dataTitle);
+        upgradeCell.setAttribute('data-tooltip-tpl', dataText);
         upgradeCell.appendChild(upgradeLink);
 
         row.appendChild(cell);
@@ -231,9 +235,11 @@ function injectAtiveQueueList(queueBuildIdsActive, buildQueueElment) {
                     `${seconds}s`;
 
                 if (index == 0) {
-                    anchor.setAttribute('data-title', `<span class='warn_90'>Cancel build</span></br> ${formattedCountdown}`);
+                    anchor.setAttribute('data-title', `<span class='warn_90'>Cancel build</span>`);
+                    anchor.setAttribute('data-tooltip-tpl', `${formattedCountdown}`);
                 } else {
-                    anchor.setAttribute('data-title', `<span class='warn_90'>Cancel build</span></br> Starts in ${formattedCountdown}`);
+                    anchor.setAttribute('data-title', `<span class='warn_90'>Cancel build</span>`);
+                    anchor.setAttribute('data-tooltip-tpl', `Starts in ${formattedCountdown}`);
                 }
                 toggleTooltip(event.target, true);
 
@@ -477,49 +483,59 @@ async function removeFromActiveBuildQueue(build_index) {
 }
 
 function callUpgradeBuilding(id) {
-    $.ajax({
-        'url': game_data.link_base_pure + 'main&action=upgrade_building&id=' + id + '&type=main&h=' + game_data.csrf,
-        'type': 'GET',
-        'success': function (data) {
-            const parser = new DOMParser();
-            const tempElement = parser.parseFromString(data, 'text/html');
-            var main = tempElement.querySelector('#building_wrapper');
+    if (id) {
+        $.ajax({
+            'url': game_data.link_base_pure + 'main&action=upgrade_building&id=' + id + '&type=main&h=' + game_data.csrf,
+            'type': 'GET',
+            'success': function (data) {
+                const parser = new DOMParser();
+                const tempElement = parser.parseFromString(data, 'text/html');
+                var main = tempElement.querySelector('#building_wrapper');
 
-            var isError = tempElement.querySelector('.error_box');
-            var building_queue = JSON.parse(localStorage.getItem('building_queue') || '[]');
-            building_queue.shift();
-            localStorage.setItem('building_queue', JSON.stringify(building_queue || []));
-            localStorage.setItem('waiting_for_queue', JSON.stringify({}));
-            if (isError !== null || !main) {
-                var missingRessourceBuildRow = tempElement.querySelector('#main_buildrow_' + id + ' .inactive');
-                if (missingRessourceBuildRow) {
-                    var timeAvailable = extractBuildTimeFromHTML(missingRessourceBuildRow.textContent);
-                }
+                var isError = tempElement.querySelector('.error_box');
+                var building_queue = JSON.parse(localStorage.getItem('building_queue') || '[]');
+                building_queue.shift();
+                localStorage.setItem('building_queue', JSON.stringify(building_queue || []));
+                localStorage.setItem('waiting_for_queue', JSON.stringify({}));
+                if (isError !== null || !main) {
+                    var missingRessourceBuildRow = tempElement.querySelector('#main_buildrow_' + id + ' .inactive');
+                    if (missingRessourceBuildRow) {
+                        var timeAvailable = extractBuildTimeFromHTML(missingRessourceBuildRow.textContent);
+                    }
 
-                if (timeAvailable) {
-                    showAutoHideBox('Added to queue at ' + (timeAvailable[0] == '0' ? 'Today' : 'Tomorrow') + ' @ ' + timeAvailable[1] + ':' + timeAvailable[2]);
-                    if (timeAvailable[0]) {
-                        var waiting_for_queue_temp = { buildId: id, time: timeAvailable };
+                    if (timeAvailable) {
+                        showAutoHideBox('Added to queue at ' + (timeAvailable[0] == '0' ? 'Today' : 'Tomorrow') + ' @ ' + timeAvailable[1] + ':' + timeAvailable[2]);
+                        if (timeAvailable[0]) {
+                            var waiting_for_queue_temp = { buildId: id, time: timeAvailable };
 
-                        localStorage.setItem('waiting_for_queue', JSON.stringify(waiting_for_queue_temp));
+                            localStorage.setItem('waiting_for_queue', JSON.stringify(waiting_for_queue_temp));
+                            building_queue = JSON.parse(localStorage.getItem('building_queue'));
+                            building_queue.unshift(id);
+                            localStorage.setItem('building_queue', JSON.stringify(building_queue));
+                        }
+                    } else {
+                        showAutoHideBox('Just added? What happenend?', true);
                         building_queue = JSON.parse(localStorage.getItem('building_queue'));
                         building_queue.unshift(id);
-                        localStorage.setItem('building_queue', JSON.stringify(building_queue));
+                        if (building_queue) localStorage.setItem('building_queue', JSON.stringify(building_queue));
                     }
+                    updateBuildQueueTimers();
+                    injectQueues(data, true);
                 } else {
-                    showAutoHideBox('Just added? What happenend?', true);
-                    building_queue = JSON.parse(localStorage.getItem('building_queue'));
-                    building_queue.unshift(id);
-                    if (building_queue) localStorage.setItem('building_queue', JSON.stringify(building_queue));
+                    showAutoHideBox('Build added to queue', false);
+                    injectQueues(data, true);
                 }
-                updateBuildQueueTimers();
-                injectQueues(data, true);
-            } else {
-                showAutoHideBox('Build added to queue', false);
-                injectQueues(data, true);
             }
-        }
-    });
+        });
+    } else {
+        //reset if null found
+        var building_queue = JSON.parse(localStorage.getItem('building_queue') || '[]');
+        building_queue = building_queue.filter(item => item !== null);
+        localStorage.setItem('building_queue', JSON.stringify(building_queue));
+        localStorage.setItem('building_queue_next_slot', '');
+
+        showAutoHideBox('Something happened, building queue reseted', true);
+    }
 }
 
 function callRemoveFromActiveBuildingQueue(idToRemove) {
