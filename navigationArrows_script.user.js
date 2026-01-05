@@ -262,28 +262,31 @@ function openVillageListPopup() {
     document.body.appendChild(popupHelper);
 }
 
+/**
+ * Opens a popup to edit the custom navigation bar shortcuts.
+ */
 function openNavEditorPopup() {
-    // 1. Verificar se já existe e remover
+    // 1. Toggle: If the editor already exists, remove it and stop
     const existing = document.querySelector(".popup_helper_editor");
     if (existing) {
         existing.remove();
         return;
     }
 
-    // 2. Criar o Overlay (Fundo escuro)
+    // 2. Create the Overlay (Dark background)
     const popupHelper = Object.assign(document.createElement("div"), {
         className: "popup_helper popup_helper_editor",
         style: "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; display: block;"
     });
 
-    // 3. Criar o Container do Popup
+    // 3. Create the Popup Container
     const popup = Object.assign(document.createElement("div"), {
         id: "nav_editor_popup",
         className: "popup_style",
         style: "position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 600px; z-index: 10001; display: block;"
     });
 
-    // 4. Cabeçalho
+    // 4. Header & Close button logic
     const popupMenu = Object.assign(document.createElement("div"), {
         className: "popup_menu",
         innerHTML: "<strong>Navigation Items</strong>",
@@ -295,10 +298,14 @@ function openNavEditorPopup() {
         innerText: "X",
         style: "float: right; cursor: pointer; font-weight: bold; text-decoration: none;"
     });
-    closeBtn.onclick = (e) => { e.preventDefault(); popupHelper.remove(); };
+
+    closeBtn.onclick = (e) => {
+        e.preventDefault();
+        popupHelper.remove();
+    };
     popupMenu.appendChild(closeBtn);
 
-    // 5. Conteúdo
+    // 5. Content Area
     const popupContent = Object.assign(document.createElement("div"), {
         className: "popup_content",
         style: "padding: 15px; background: #f4e4bc; max-height: 450px; overflow-y: auto;"
@@ -321,36 +328,39 @@ function openNavEditorPopup() {
         <tbody id="nav_editor_body"></tbody>
     `;
 
-    // Função para adicionar linha
+    /**
+     * Helper to add a new row to the editor table
+     */
     const addRow = (item = { name: '', href: '', img: '' }) => {
         const tbody = document.getElementById('nav_editor_body');
         if (!tbody) return;
 
         const row = tbody.insertRow();
+        const deleteText = lang['1063e38cb53d94d386f21227fcd84717'] ?? 'Remove';
 
         row.innerHTML = `
-        <td><input type="text" class="nav-name" value="${item.name}" style="width: 100px; font-size:12px"></td>
-        <td><input type="text" class="nav-href" value="${item.href}" style="width: 180px; font-size:12px" placeholder="/game.php?screen=..."></td>
-        <td><input type="text" class="nav-img" value="${item.img}" style="width: 180px; font-size:12px" placeholder="ex: unit/att.png"></td>
-        <td style="text-align:center;">
-            <span class="delete-icon-large hint-toggle" 
-                  style="cursor:pointer;" 
-                  data-title="${lang['1063e38cb53d94d386f21227fcd84717'] ?? 'Remove'}">
-            </span>
-        </td>
-    `;
+            <td><input type="text" class="nav-name" value="${item.name}" style="width: 100px; font-size:12px"></td>
+            <td><input type="text" class="nav-href" value="${item.href}" style="width: 180px; font-size:12px" placeholder="/game.php?screen=..."></td>
+            <td><input type="text" class="nav-img" value="${item.img}" style="width: 180px; font-size:12px" placeholder="ex: unit/att.png"></td>
+            <td style="text-align:center;">
+                <span class="delete-icon-large hint-toggle" 
+                      style="cursor:pointer;" 
+                      data-title="${deleteText}">
+                </span>
+            </td>
+        `;
 
         const deleteBtn = row.querySelector('.delete-icon-large');
 
-        // 1. Evento de Clique para remover a linha
+        // 1. Click event to remove the row
         deleteBtn.onclick = () => {
-            // Importante: Esconder o tooltip antes de remover o elemento do DOM
-            // para evitar que o tooltip fique "pendurado" na tela
+            // Important: Hide the tooltip before removing the element from DOM
+            // to prevent the tooltip from getting "stuck" on the screen.
             if (typeof toggleTooltip === 'function') toggleTooltip(deleteBtn, false);
             row.remove();
         };
 
-        // 2. Eventos de Hover para o Tooltip
+        // 2. Hover events for the Native Tooltip
         if (typeof toggleTooltip === 'function') {
             deleteBtn.onmouseenter = () => toggleTooltip(deleteBtn, true);
             deleteBtn.onmouseleave = () => toggleTooltip(deleteBtn, false);
@@ -359,7 +369,7 @@ function openNavEditorPopup() {
 
     popupContent.appendChild(table);
 
-    // 6. Botões de Controlo
+    // 6. Control Buttons (Footer)
     const footer = document.createElement("div");
     footer.style.marginTop = "15px";
     footer.style.display = "flex";
@@ -375,6 +385,7 @@ function openNavEditorPopup() {
         className: "btn btn-confirm",
         innerText: lang['c9cc8cce247e49bae79f15173ce97354'] ?? 'Save Changes'
     });
+
     saveBtn.onclick = () => {
         const newItems = [];
         document.querySelectorAll('#nav_editor_body tr').forEach(tr => {
@@ -388,7 +399,7 @@ function openNavEditorPopup() {
             }
         });
 
-        // Save data
+        // Save data to LocalStorage and refresh page
         localStorage.setItem('nav_shortcuts', JSON.stringify(newItems));
         window.location.reload();
     };
@@ -396,20 +407,23 @@ function openNavEditorPopup() {
     footer.append(addBtn, saveBtn);
     popupContent.appendChild(footer);
 
-    // 7. Montagem Final
+    // 7. Final Assembly
     popup.append(popupMenu, popupContent);
     popupHelper.appendChild(popup);
     document.body.appendChild(popupHelper);
 
-    // Fechar ao clicar no fundo
-    popupHelper.onclick = (e) => { if (e.target === popupHelper) popupHelper.remove(); };
+    // Close when clicking the background overlay
+    popupHelper.onclick = (e) => {
+        if (e.target === popupHelper) popupHelper.remove();
+    };
 
-    // Carregar dados existentes
+    // Load existing data into the table
     const savedData = JSON.parse(localStorage.getItem('nav_shortcuts') || "[]");
     if (savedData.length > 0) {
         savedData.forEach(item => addRow(item));
     } else {
-        addRow(); // Adiciona uma linha vazia por defeito
+        // Add one empty row by default if no data exists
+        addRow();
     }
 }
 
