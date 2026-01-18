@@ -245,9 +245,10 @@ function extractReports(doc) {
     reportLabels.forEach(label => {
         // Use .closest() to find the table row containing this report
         const row = label.closest('tr');
+        const title = label.closest('.report-title');
         if (!row) return;
 
-        const reportId = row.getAttribute('data-id');
+        const reportId = title.getAttribute('data-id');
         const labelText = label.textContent;
 
         // Optimized Regex: Extracts the last (xxx|yyy) coordinates found in the text
@@ -255,7 +256,7 @@ function extractReports(doc) {
 
         if (coordsMatch && reportId) {
             // Scope the search to the current row for better performance
-            const dateElement = row.querySelector('.nowrap');
+            const dateElement = row.querySelectorAll('.nowrap')[1];
 
             if (dateElement) {
                 reports.push({
