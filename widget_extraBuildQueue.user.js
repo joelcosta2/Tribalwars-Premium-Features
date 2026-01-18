@@ -74,7 +74,7 @@ function injectBuildQueue(availableBuildingsImgs, buildingImgs, availableBuildin
         upgradeLink.style.width = '-webkit-fill-available';
         upgradeLink.style.margin = '0';
         upgradeLink.style.fontSize = '11px !important';
-        upgradeLink.style.padding = '1px 3px';
+        upgradeLink.style.padding = '2px 1px 2px 8px';
         upgradeLink.textContent = 'Level ' + nextLevel;
         upgradeLink.onclick = function () {
             addToBuildQueue(buildId);
@@ -214,7 +214,7 @@ function injectAtiveQueueList(queueBuildIdsActive, buildQueueElment) {
             anchor.setAttribute('data-title', `<span class='warn_90'>Cancel build</span>`);
 
             function updateCountdown(event) {
-                const now = Date.now();
+                const now = getServerTimestamp();
                 //const remainingTime = (index == 0 ? parseInt(localStorage.getItem('building_queue_next_slot')) : parseInt(localStorage.getItem('building_queue_last_slot'))) - now;
                 const remainingTime = parseInt(localStorage.getItem('building_queue_next_slot')) - now;
 
@@ -280,7 +280,7 @@ function injectAtiveQueueList(queueBuildIdsActive, buildQueueElment) {
             progressBar.style.left = '0';
             progressBar.style.width = '100%';
             progressBar.style.height = '4px';
-            progressBar.style.backgroundColor = '#4caf50';
+            progressBar.style.backgroundColor = 'rgb(146, 194, 0)';
 
             span.appendChild(progressBar);
             anchor.appendChild(span);
@@ -445,7 +445,7 @@ function removeFromBuildQueue(build_index) {
 
     if (build_index === 0) {
         localStorage.removeItem('function_building_queue');
-        localStorage.removeItem('endTime_building_queue');
+        //localStorage.removeItem('endTime_building_queue');
         localStorage.setItem('waiting_for_queue', JSON.stringify({}));
     }
     const mainElement = localStorage.getItem('last_main_page');
@@ -569,7 +569,7 @@ function updateBuildQueueTimers() {
         var addToQueueDate = new Date();
         addToQueueDate.setDate(addToQueueDate.getDate() + parseInt(nextTimeDate[0]));
         addToQueueDate.setHours(parseInt(nextTimeDate[1]), parseInt(nextTimeDate[2]));
-        var waitTime = (addToQueueDate.getTime() - Date.now());
+        var waitTime = (addToQueueDate.getTime() - getServerTimestamp());
         if (waitTime > 0) {
             setFunctionOnTimeOut('building_queue', addToBuildQueue, waitTime);
         } else {
@@ -579,7 +579,7 @@ function updateBuildQueueTimers() {
         //build waiting for the next slot available
         if (building_queue.length) {
             var nextTimeDate = new Date(parseInt(localStorage.getItem('building_queue_next_slot')));
-            var waitTime = (nextTimeDate.getTime() - Date.now());
+            var waitTime = (nextTimeDate.getTime() - getServerTimestamp());
             if (waitTime > 0) {
                 setFunctionOnTimeOut('building_queue', addToBuildQueue, waitTime);
             } else {

@@ -1,5 +1,5 @@
 function injectScriptAutoTrainerPaladin() {
-    if(settings_cookies.general['show__auto_paladin_train'].enabled === true) {
+    if (settings_cookies.general['show__auto_paladin_train'].enabled === true) {
         runAutoTrainer();
     }
 }
@@ -10,7 +10,7 @@ async function runAutoTrainer() {
     const showWarningPopup = !isWaiting && !cancelButton;
 
     const userChoice = showWarningPopup ? await displayWarningPopup('Confirm Auto Paladin Train', 'Do you wish to continue with the paladin train automation?') : 'cancel';
-  
+
     if (userChoice === 'cancel') {
         return;
     } else {
@@ -25,7 +25,7 @@ async function runAutoTrainer() {
                 var trainLevel = 0;
                 if (trainLevelsButtons.length) {
                     trainLevelsButtons[trainLevel].click();
-                    
+
                     wait(1).then(() => {
                         var trainTime = document.querySelector('[data-endtime]');
                         if (trainTime) {

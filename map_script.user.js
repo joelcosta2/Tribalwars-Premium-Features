@@ -417,7 +417,7 @@ function getReportInfoToMap() {
                                 var tr = document.createElement('tr');
                                 tr.id = "info_last_attack";
                                 var th = document.createElement('th');
-                                th.innerHTML = '↓Last Attack:  ';
+                                th.innerHTML = '↓ Last Attack:  ';
                                 var td = document.createElement('td');
                                 td.innerHTML = report.date;
                                 tr.appendChild(th);
@@ -436,7 +436,8 @@ function getReportInfoToMap() {
                                 }
 
                                 // Coletar informações do espionagem
-                                var attackLootDiscoverResults = tempElement.querySelector('#attack_spy_resources tr');
+                                var attackLootDiscoverResults = tempElement.querySelectorAll('#attack_spy_resources tr');
+                                attackLootDiscoverResults = attackLootDiscoverResults[attackLootDiscoverResults.length - 1]
                                 if (attackLootDiscoverResults) {
                                     mapPopUpBody.appendChild(attackLootDiscoverResults);
 

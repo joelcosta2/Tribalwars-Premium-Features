@@ -4,14 +4,6 @@ var customCSS = `
 .not-hidden {
     display: block;
 }
-.btn-build.current-quest {
-    min-width: 0;
-    padding: 3px 9px;
-    background: linear-gradient(to bottom, #0bac00 0%,#0e7a1e 100%);
-}
-.btn-build.current-quest:hover {
-    background: linear-gradient(to bottom, #13c600 0%,#129e23 100%);
-}
 
 #toggleButton.toggle-on {
     background-color: green;

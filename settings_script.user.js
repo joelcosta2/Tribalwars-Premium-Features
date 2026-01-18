@@ -345,7 +345,11 @@ var availableSettings = [
     { "name": "show__time_storage_full_hover", "label": "Storage Timer", "description": "Shows the exact time remaining until your storage is full when hovering over resources." },
 
     // Automation
-    { "name": "show__auto_scavenging", "label": "Auto-Scavenger", "description": "Automatically manages and sends scavenging runs. (Requires active browser tab)." },
+    {
+        "name": "show__auto_scavenging", "label": "Auto-Scavenger", "description": "Automatically manages and sends scavenging runs. (Requires active browser tab).", "extraSettings": {
+            "maxLevel": { "label": "TEMPORARY, TO DEFINE TROOPS?", "type": "number", "default": 0 },
+        }
+    },
     {
         "name": "show__auto_paladin_train", "label": "Auto-Paladin Trainer", "description": "Automatically manages paladin training tasks. (Requires active browser tab).",
         "extraSettings": {

@@ -29,25 +29,25 @@ function getStorageTime() {
             success: function (data) {
                 var spans = $(data).find("span[data-endtime]");
                 var fullStorageTimes = {
-                    wood: $(spans[0]).attr("data-endtime"),
-                    stone: $(spans[1]).attr("data-endtime"),
-                    iron: $(spans[2]).attr("data-endtime")
+                    wood: parseFloat($(spans[0]).attr("data-endtime")) * 1000,
+                    stone: parseFloat($(spans[1]).attr("data-endtime")) * 1000,
+                    iron: parseFloat($(spans[2]).attr("data-endtime")) * 1000
                 };
                 localStorage.setItem('full_storage_times', JSON.stringify(fullStorageTimes));
 
                 //hovers resources
                 addRessourcesHover(fullStorageTimes);
-                
+
                 if (fullStorageTimes) {
                     minTime = Math.min(...Object.values(fullStorageTimes));
-                    var now = Math.floor(Timing.getCurrentServerTime() / 1000);
+                    var now = Math.floor(getServerTimestamp());
                     var remaining = minTime - now;
-                    
-                    if(remaining) {
-                        var hours = Math.floor(remaining / 3600).toString().padStart(2, '0');
-                        var minutes = Math.floor((remaining % 3600) / 60).toString().padStart(2, '0');
-                        var seconds = (remaining % 60).toString().padStart(2, '0');
-                        
+                    if (remaining) {
+                        var totalSeconds = Math.floor(remaining / 1000);
+                        var hours = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
+                        var minutes = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
+                        var seconds = (totalSeconds % 60).toString().padStart(2, '0');
+
                         addToVisualLabelExtra('storage', `${hours}:${minutes}:${seconds}`, true, minTime);
                     }
                 }
@@ -64,7 +64,7 @@ function addRessourcesHover(fullStorageTimes) {
             if (element) {
                 var parentInfoBox = element.parentElement;
                 var iconBox = parentInfoBox.previousElementSibling;
-                
+
                 var tooltip = document.getElementById("tooltip");
                 if (tooltip) {
                     var bodyElement = tooltip.querySelector(".body");
@@ -72,18 +72,18 @@ function addRessourcesHover(fullStorageTimes) {
                         parentInfoBox.dataset.interval = setInterval(function () {
                             const resourceHover = localStorage.getItem('resourceHover');
                             if (resourceHover) {
-                                startResourceTimerFull(parseInt(fullStorageTimes[resourceHover]), bodyElement);
+                                startTimerOnLabel(parseInt(fullStorageTimes[resourceHover]), bodyElement);
                             } else {
                                 //bodyElement.style.display = "none";
                             }
                         }, 500);
-                        
+
                         parentInfoBox.addEventListener("mouseenter", function () {
-                            startResourceTimerFull(parseInt(fullStorageTimes[resourceId]), bodyElement);
+                            startTimerOnLabel(parseInt(fullStorageTimes[resourceId]), bodyElement);
                             localStorage.setItem('resourceHover', resourceId);
                         });
                         iconBox.addEventListener("mouseenter", function () {
-                            startResourceTimerFull(parseInt(fullStorageTimes[resourceId]), bodyElement);
+                            startTimerOnLabel(parseInt(fullStorageTimes[resourceId]), bodyElement);
                             localStorage.setItem('resourceHover', resourceId);
                         });
 
@@ -106,16 +106,16 @@ function getWoodInfo() {
         const fullTime = storageFullTime['wood'];
         if (fullTime) {
             var remaining = endTimeToTimer(fullTime);
-            if(remaining) {
+            if (remaining) {
                 const wood = document.getElementById('wood');
                 let production;
                 if (wood?.hasAttribute('data-title')) {
                     production = wood.getAttribute('data-title').match(/\d+/g);
                     const labelVisual = production + '/h\n' + `${remaining[0]}:${remaining[1]}:${remaining[2]}`;;
-                    if (production) addToVisualLabelExtra('wood', labelVisual , true, fullTime);
+                    if (production) addToVisualLabelExtra('wood', labelVisual, true, fullTime);
                 }
-                return {perHour: production, fullEndTime: '0'}; //get value from label?
-            } 
+                return { perHour: production, fullEndTime: '0' }; //get value from label?
+            }
         }
     }
     return {};
@@ -127,16 +127,16 @@ function getStoneInfo() {
         const fullTime = storageFullTime['stone'];
         if (fullTime) {
             var remaining = endTimeToTimer(fullTime);
-            if(remaining) {
+            if (remaining) {
                 const stone = document.getElementById('stone');
                 let production;
                 if (stone?.hasAttribute('data-title')) {
                     production = stone.getAttribute('data-title').match(/\d+/g);
                     const labelVisual = production + '/h\n' + `${remaining[0]}:${remaining[1]}:${remaining[2]}`;;
-                    if (production) addToVisualLabelExtra('stone', labelVisual , true, fullTime);
+                    if (production) addToVisualLabelExtra('stone', labelVisual, true, fullTime);
                 }
 
-                return {perHour: production, fullEndTime: '0'}; //get value from label?
+                return { perHour: production, fullEndTime: '0' }; //get value from label?
             }
         }
     }
@@ -150,16 +150,16 @@ function getIronInfo() {
         if (fullTime) {
             var remaining = endTimeToTimer(fullTime);
 
-            if(remaining) {
+            if (remaining) {
                 const iron = document.getElementById('iron');
                 let production;
                 if (iron?.hasAttribute('data-title')) {
                     production = iron.getAttribute('data-title').match(/\d+/g);
                     const labelVisual = production + '/h\n' + `${remaining[0]}:${remaining[1]}:${remaining[2]}`;
-                    if (production) addToVisualLabelExtra('iron', labelVisual , true, fullTime);
+                    if (production) addToVisualLabelExtra('iron', labelVisual, true, fullTime);
                 }
 
-                return {perHour: production, fullEndTime: '0'}; //get value from label?
+                return { perHour: production, fullEndTime: '0' }; //get value from label?
             }
         }
     }
@@ -173,13 +173,13 @@ function getSmithTime() {
 function getMainQueueTime() {
     const building_queue_next_slot = parseInt(localStorage.getItem('building_queue_next_slot'));
     const building_queue_last_slot = parseInt(localStorage.getItem('building_queue_last_slot'));
-    
+
     if (building_queue_next_slot || building_queue_last_slot) {
-        var lastSlot = Math.floor((building_queue_last_slot ? building_queue_last_slot  : building_queue_next_slot) / 1000);
+        var lastSlot = Math.floor((building_queue_last_slot ? building_queue_last_slot : building_queue_next_slot) / 1000);
         var remaining = endTimeToTimer(lastSlot);
         let labelVisual;
-        
-        if(remaining) {
+
+        if (remaining) {
             labelVisual = `${remaining[0]}:${remaining[1]}:${remaining[2]}`;
             addToVisualLabelExtra('main', labelVisual, true, lastSlot);
         }
@@ -199,8 +199,8 @@ function getMarketInfo() {
             success: function (data) {
                 const market_merchant_available_count = $(data).find("#market_merchant_available_count").text();
                 const market_merchant_total_count = $(data).find("#market_merchant_total_count").text();
-                if(market_merchant_available_count && market_merchant_total_count)
-                addToVisualLabelExtra('market', `${market_merchant_available_count}\/${market_merchant_total_count}`);
+                if (market_merchant_available_count && market_merchant_total_count)
+                    addToVisualLabelExtra('market', `${market_merchant_available_count}\/${market_merchant_total_count}`);
             }
         })
     }
@@ -214,8 +214,8 @@ function getPlaceInfo() {
         var endTime = Math.floor(endTime_scavenging / 1000);
         var remaining = endTimeToTimer(endTime);
         let labelVisual;
-        
-        if(remaining) {
+
+        if (remaining) {
             labelVisual = `${remaining[0]}:${remaining[1]}:${remaining[2]}`;
             addToVisualLabelExtra('place', labelVisual, true, endTime);
         }
@@ -230,7 +230,7 @@ function getStatueInfo() {
         var endTime = Math.floor(endTime_paladin / 1000);
         var remaining = endTimeToTimer(endTime);
         const labelVisual = `${remaining[0]}:${remaining[1]}:${remaining[2]}`;
-        
+
         addToVisualLabelExtra('statue', labelVisual, true, endTime);
 
     }
@@ -242,8 +242,8 @@ function getBarracksTime(barrracksTimes) {
         var lastTrain = Math.floor(barrracksTimes[barrracksTimes.length - 1] / 1000);
         var remaining = endTimeToTimer(lastTrain);
         let labelVisual;
-        
-        if(remaining) {
+
+        if (remaining) {
             labelVisual = `${remaining[0]}:${remaining[1]}:${remaining[2]}`;
             addToVisualLabelExtra('barracks', labelVisual, true, lastTrain);
         }
@@ -256,8 +256,8 @@ function getStableTime(stableTimes) {
         var lastTrain = Math.floor(stableTimes[stableTimes.length - 1] / 1000);
         var remaining = endTimeToTimer(lastTrain);
         let labelVisual;
-        
-        if(remaining) {
+
+        if (remaining) {
             labelVisual = `${remaining[0]}:${remaining[1]}:${remaining[2]}`;
             addToVisualLabelExtra('stable', labelVisual, true, lastTrain);
         }
@@ -270,8 +270,8 @@ function getGarageTime(garageTimes) {
         var lastTrain = Math.floor(garageTimes[garageTimes.length - 1] / 1000);
         var remaining = endTimeToTimer(lastTrain);
         let labelVisual;
-        
-        if(remaining) {
+
+        if (remaining) {
             labelVisual = `${remaining[0]}:${remaining[1]}:${remaining[2]}`;
             addToVisualLabelExtra('stable', labelVisual, true, lastTrain);
         }
@@ -300,13 +300,13 @@ function setOngoingBuildingLevels() {
 
 function storeAvailableUnitsCosts(data) {
     let unitCosts = {};
-    $(data).find(".recruit_req").each(function(index, reqEl) {
-        $(reqEl).find('span').each(function(i, span) {
+    $(data).find(".recruit_req").each(function (index, reqEl) {
+        $(reqEl).find('span').each(function (i, span) {
             let match = span.id.match(/^([a-z]+)_\d+_cost_([a-z_]+)$/);
             if (match) {
                 let unitType = match[1]; // Nome da unidade (spear, sword, etc.)
                 let resource = match[2]; // Tipo de recurso (wood, stone, iron, pop)
-    
+
                 // Garante que a unidade tenha um objeto antes de adicionar custos
                 if (!unitCosts[unitType]) {
                     unitCosts[unitType] = {};
@@ -319,7 +319,7 @@ function storeAvailableUnitsCosts(data) {
                 }
             }
         });
-    
+
         // Adiciona informações adicionais, se existirem
         let unitTypeFromId = reqEl.id.split('_')[0];
         if (game_data.units[unitTypeFromId]) {
@@ -373,7 +373,7 @@ function fetchTrainInfo() {
 
                 //get all available units costs:
                 storeAvailableUnitsCosts(data);
-                }
+            }
         })
     }
 }
@@ -416,7 +416,7 @@ function addToVisualLabelExtra(buildingName, newTextContent, isTimer = false, en
             div.style.whiteSpace = 'pre-line';
             div.textContent = newTextContent;
             div.style.fontSize = "9px";
-        
+
             labelContent.appendChild(div);
 
             if (isTimer && endtime > 0) {

@@ -136,17 +136,27 @@ function listenTextAreas() {
 }
 
 function defineKeyboardShortcuts() {
+    // Primeiro, removemos os eventos anteriores para não criar duplicados
+    $(document).off('keydown.villageNavigation');
+
+    // Verificamos se a definição está ativa
     if (settings_cookies.general['show__navigation_arrows']) {
-        $(document).keydown(function (evt) {
-            if (evt.keyCode == 65 && !textSelected) {
-                evt.preventDefault();
-                previousVillage();
+
+        $(document).on('keydown.villageNavigation', function (evt) {
+            // Ignora se o utilizador estiver a escrever em inputs ou se houver texto selecionado
+            if (textSelected || $(evt.target).is('input, textarea, select')) {
+                return;
             }
-        });
-        $(document).keydown(function (evt) {
-            if (evt.keyCode == 68 && !textSelected) {
-                evt.preventDefault();
-                nextVillage();
+
+            switch (evt.keyCode) {
+                case 65: // Tecla 'A'
+                    evt.preventDefault();
+                    previousVillage();
+                    break;
+                case 68: // Tecla 'D'
+                    evt.preventDefault();
+                    nextVillage();
+                    break;
             }
         });
     }
@@ -440,27 +450,6 @@ function toggleTooltip(element, isVisible) {
     }
 }
 
-function toggleTooltipNoText(element, isVisible) {
-    var rect = element.getBoundingClientRect();
-    var scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-    var scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
-
-    var elementPosition = {
-        top: rect.top + scrollTop,
-        left: rect.left + scrollLeft
-    };
-
-    var tooltip = document.getElementById('tooltip');
-    if (isVisible) {
-        tooltip.style.display = 'block';
-        tooltip.style.top = (Math.ceil(elementPosition.top) + 22) + 'px';
-        tooltip.style.left = (Math.ceil(elementPosition.left) + 25) + 'px';
-        tooltip.classList.add('tooltip-style');
-    } else {
-        tooltip.style.display = 'none';
-        tooltip.classList.remove('tooltip-style');
-    }
-}
 
 function extractBuildTimeFromHTML(stringHTML) {
     const lang = JSON.parse(localStorage.getItem('tw_lang'));
@@ -541,14 +530,15 @@ function extractBuildTimestampFromHTML(stringHTML) {
 }
 
 function endTimeToTimer(endtime) {
-    var now = Math.floor(Timing.getCurrentServerTime() / 1000);
+    var now = Math.floor(getServerTimestamp());
     var remaining = endtime - now;
     if (remaining <= 0) {
         return null;
     } else {
-        var hours = Math.floor(remaining / 3600);
-        var minutes = Math.floor((remaining % 3600) / 60);
-        var seconds = remaining % 60;
+        var totalSeconds = Math.floor(remaining / 1000);
+        var hours = Math.floor(totalSeconds / 3600);
+        var minutes = Math.floor((totalSeconds % 3600) / 60);
+        var seconds = totalSeconds % 60;
         return [hours.toString().padStart(2, '0'), minutes.toString().padStart(2, '0'), seconds.toString().padStart(2, '0')];
     }
 }
@@ -589,7 +579,7 @@ function setFunctionOnTimeOut(id, func, timeToRun) {
     let randomExtraTime = Math.random() * 180000;
     let finalTimeToRun = Math.floor(timeToRun + randomExtraTime);
 
-    let endTime = Math.floor(Date.now() + finalTimeToRun);
+    let endTime = Math.floor(getServerTimestamp() + finalTimeToRun);
     localStorage.setItem('endTime_' + id, endTime);
     localStorage.setItem('function_' + id, func.toString());
 
@@ -608,7 +598,7 @@ function restoreTimeouts() {
             var id = key.replace('endTime_', '');
 
             var endTime = localStorage.getItem(key);
-            var remainingTime = parseInt(endTime) - Date.now();
+            var remainingTime = parseInt(endTime) - getServerTimestamp();
 
             if (remainingTime > 0) {
                 setTimeout(() => {
@@ -668,7 +658,7 @@ if (questButton) {
     };
 }
 
-function startResourceTimerFull(endtime, element) {
+function startTimerOnLabel(endtime, element) {
     var remaining = endTimeToTimer(endtime);
     if (!remaining) {
         element.textContent = 'END';
@@ -680,27 +670,9 @@ function startResourceTimerFull(endtime, element) {
     //element.classList.toggle('not-hidden');
 }
 
-function startTimerOnLabel(endtime, element) {
-    var now = Math.floor(Timing.getCurrentServerTime() / 1000);
-    var remaining = endtime - now;
-
-    if (remaining <= 0) {
-        element.textContent = '';
-        clearInterval(element.dataset.interval);
-    } else {
-        var hours = Math.floor(remaining / 3600).toString().padStart(2, '0');
-        var minutes = Math.floor((remaining % 3600) / 60).toString().padStart(2, '0');
-        var seconds = (remaining % 60).toString().padStart(2, '0');
-
-        var formattedTime = `${hours}:${minutes}:${seconds}`;
-
-        element.textContent = element.textContent.replace(/\d{2}:\d{2}:\d{2}/, formattedTime);
-    }
-    element.style.display = "block";
-}
-
+// TODO: not used?
 function getRemainingHours(endtime) {
-    var now = Math.floor(Timing.getCurrentServerTime() / 1000);
+    var now = Math.floor(getServerTimestamp());
     var remaining = endtime - now;
     return Math.floor(remaining / 3600);
 }
@@ -724,10 +696,6 @@ function showAutoHideBox(text, isError = true) {
     divAutoHideBox.classList.add(isError ? 'error' : 'success');
     clearTimeout(divAutoHideBox.dataset.timeout);
     divAutoHideBox.dataset.timeout = setTimeout(() => divAutoHideBox.remove(), 3000);
-}
-
-function injectAttackCalculations() {
-    console.log(parseInt(document.querySelector('#command-data-form .village-distance').textContent.match(/(\d+)/), 10));
 }
 
 function convertBBCodeToHTML(text) {
@@ -763,7 +731,7 @@ async function updateMapInfoVillages(force = false) {
     const ONE_HOUR = 60 * 60 * 1000; // 1 hour in milliseconds
 
     const lastUpdate = localStorage.getItem(TIMESTAMP_KEY);
-    const now = Date.now();
+    const now = getServerTimestamp();
 
     // Check if we already have data and if it's still "fresh" (less than 1 hour old)
     if (!force && (lastUpdate && (now - lastUpdate < ONE_HOUR) && localStorage.getItem(STORAGE_KEY))) {
@@ -999,10 +967,6 @@ function start() {
             $(document).ready(function () {
                 injectScriptAutoTrainerPaladin();
             });
-        } else if (urlPage.includes("&screen=place&target")) {
-            $(document).ready(function () {
-                injectAttackCalculations();
-            });
         }
         insertNavigationArrows();
         insertListVillagesPopup();
@@ -1053,6 +1017,41 @@ function start() {
         }
     }
 }
+
+
+
+function getServerTimestamp(timeZone = "Europe/Lisbon") {
+    const serverTimeStr = document.getElementById('serverTime').textContent.trim();
+    const serverDateStr = document.getElementById('serverDate').textContent.trim();
+    // 1. Organizar os dados da string (assumindo DD/MM/YYYY)
+    const [day, month, year] = serverDateStr.split('/').map(Number);
+    const [hours, minutes, seconds] = serverTimeStr.split(':').map(Number);
+
+    // 2. Criar uma string ISO básica (sem fuso ainda)
+    // Formato: YYYY-MM-DDTHH:mm:ss
+    const isoBase = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+    // 3. Usar o Intl para descobrir qual era o offset daquele fuso naquela data específica
+    // Isto lida com Horário de Verão automaticamente em qualquer parte do mundo
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: timeZone,
+        timeZoneName: 'shortOffset'
+    });
+
+    // Criamos uma data temporária para extrair o offset
+    const tempDate = new Date(isoBase);
+    const parts = formatter.formatToParts(tempDate);
+    const offset = parts.find(p => p.type === 'timeZoneName').value; // Ex: "GMT+1" ou "GMT-3"
+
+    // 4. Limpar o offset (transformar "GMT+1" em "+01:00")
+    const formattedOffset = offset.replace('GMT', '') || '+00:00';
+
+    // 5. Criar a data final com o fuso embutido
+    const finalDate = new Date(isoBase + (formattedOffset.includes(':') ? formattedOffset : formattedOffset + ':00'));
+
+    return finalDate.getTime();
+}
+
 
 //redirect barracks and stable to train screen
 if (settings_cookies.general['redirect__train_buildings']) {
