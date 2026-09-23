@@ -264,6 +264,36 @@ function buildBBCodeButtonsToolbar(idPrefix = '') {
  */
 function injectNotepadWidget(columnToUse) {
     if (settings_cookies.general['show__notepad']) {
+        const existingRoot = document.getElementById('show_notepad');
+        const existingEditor = document.getElementById('note_body_edit');
+        if (existingRoot?.dataset?.notepadVillageId === getCurrentNotepadVillageId() &&
+            existingEditor && existingEditor.style.display !== 'none') {
+            // A partial reload must not destroy an unsaved, in-progress note merely to refresh
+            // the same widget. The next normal inject after editing finishes can update it.
+            return;
+        }
+        const hydration = window.PremiumFeaturesHydration?.notepad;
+        if (hydration?.status === 'PENDING') {
+            const loading = document.createElement('div');
+            loading.id = 'notepad_loading';
+            loading.appendChild(createWidgetLoadingElement());
+            createWidgetElement({
+                identifier: t('notepad.title'),
+                contents: loading,
+                columnToUse,
+                update: true,
+                description: t('notepad.description'),
+                widgetKey: 'notepad',
+                loading: true
+            });
+            if (!hydration.notepadWidgetRefreshRegistered) {
+                hydration.notepadWidgetRefreshRegistered = true;
+                hydration.promise.then(function () {
+                    injectNotepadWidget(columnToUse);
+                });
+            }
+            return;
+        }
         var editLink = document.createElement('a');
         editLink.id = 'edit_notepad_link_script';
         editLink.classList.add('btn');
@@ -454,7 +484,8 @@ function injectNotepadWidget(columnToUse) {
         tbody.appendChild(editButtonRow);
         table.appendChild(tbody);
 
-        createWidgetElement({ identifier: t('notepad.title'), contents: table, columnToUse, update: '', extra_name: '', description: t('notepad.description'), title: lang['744c0e143621b2e2aeaee257475d6d22'] || t('notepad.title'), widgetKey: 'notepad' });
+        const root = createWidgetElement({ identifier: t('notepad.title'), contents: table, columnToUse, update: '', extra_name: '', description: t('notepad.description'), title: lang['744c0e143621b2e2aeaee257475d6d22'] || t('notepad.title'), widgetKey: 'notepad' });
+        if (root) root.dataset.notepadVillageId = getCurrentNotepadVillageId();
         loadNote();
     }
 }

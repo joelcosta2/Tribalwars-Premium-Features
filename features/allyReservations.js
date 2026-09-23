@@ -131,6 +131,10 @@ function getReservationForVillage(villageId) {
     return reservationsGetAll()[String(villageId)] || null;
 }
 
+function isReservationCacheHydrating() {
+    return window.PremiumFeaturesHydration?.reservations?.status === 'PENDING';
+}
+
 /**
  * Submits a new reservation the same way the reservation planner's own "Reservar esta aldeia"
  * form does (POST action=new_reservation, target_type=coord). Returns the response HTML (the
@@ -318,6 +322,30 @@ function updateReservationCtxButtons(village, x, y) {
     $(mpUnlock).off('click.allyReservations');
     mpUnlock.classList.remove('reservation-ctx-disabled');
 
+    const reservationHydration = window.PremiumFeaturesHydration?.reservations;
+    if (isReservationCacheHydrating()) {
+        // An empty in-memory cache during hydration is not proof that a village is unreserved.
+        // Hide both mutations until its own cache is ready; re-render only if this same village
+        // is still the active context when the promise settles.
+        mpLock.dataset.twpfReservationVillageId = String(village.id);
+        mpLock.style.display = 'none';
+        mpUnlock.style.display = 'none';
+        reservationHydration.pendingMapContext = { village, x, y, element: mpLock };
+        if (!reservationHydration.mapContextRefreshRegistered) {
+            reservationHydration.mapContextRefreshRegistered = true;
+            reservationHydration.promise.then(function () {
+                const pending = reservationHydration.pendingMapContext;
+                reservationHydration.pendingMapContext = null;
+                if (pending?.element?.isConnected &&
+                    pending.element.dataset.twpfReservationVillageId === String(pending.village.id)) {
+                    updateReservationCtxButtons(pending.village, pending.x, pending.y);
+                }
+            });
+        }
+        return;
+    }
+    mpLock.dataset.twpfReservationVillageId = String(village.id);
+
     if (String(village.owner) === String(game_data.player.id)) {
         mpLock.style.display = 'none';
         mpLock.style.opacity = '0';
@@ -410,6 +438,17 @@ function updateReservationCtxButtons(village, x, y) {
 function renderExternalReservationCtxAction(context, element) {
     if (!game_data.player.ally || !context.villageId || context.x === null || context.y === null) return false;
 
+    if (isReservationCacheHydrating()) {
+        const hydration = window.PremiumFeaturesHydration.reservations;
+        if (!hydration.contextRefreshRegistered) {
+            hydration.contextRefreshRegistered = true;
+            hydration.promise.then(function () {
+                if (typeof refreshCtxCustom === 'function') refreshCtxCustom();
+            });
+        }
+        return false;
+    }
+
     const village = { id: context.villageId, owner: context.ownerId };
     const reservation = getReservationForVillage(context.villageId);
     element.classList.remove('reservation-ctx-disabled', 'mp_lock', 'mp_unlock');
@@ -444,6 +483,7 @@ function setReservationCtxLoading(element, isLoading) {
 
 function handleExternalReservationCtxAction(context, element) {
     if (!game_data.player.ally || context.x === null || context.y === null) return;
+    if (isReservationCacheHydrating()) return;
 
     const village = { id: context.villageId, owner: context.ownerId };
     const reservation = getReservationForVillage(context.villageId);
@@ -488,7 +528,7 @@ function handleExternalReservationCtxAction(context, element) {
     }
 }
 
-if (!isPremiumAccount() && typeof registerCtxCustomAction === 'function') {
+if (isMapContextButtonEnabled('reservation') && typeof registerCtxCustomAction === 'function') {
     registerCtxCustomAction({
         id: 'reservations',
         slot: 1,
@@ -526,7 +566,7 @@ function startReservationContextWatcher() {
     };
 }
 
-if (typeof TWMap !== 'undefined' && !isPremiumAccount() && isMapContextButtonEnabled('reservation')) {
+if (typeof TWMap !== 'undefined' && isMapContextButtonEnabled('reservation')) {
     syncAllyReservations();
     startReservationContextWatcher();
 }

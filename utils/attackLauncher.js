@@ -113,6 +113,11 @@ async function launchAttack(units, targetId, coordsOverride) {
         });
 
         if (responseStep2.ok) {
+            if (typeof invalidateOutgoingCommandsCache === 'function') {
+                invalidateOutgoingCommandsCache('attack-created');
+            } else {
+                localStorage.setItem('outgoing_commands_invalidated_at', String(Date.now()));
+            }
             const successMsg = t('core.attackSent', { coords: coordX + '|' + coordY });
             showAutoHideBox(successMsg, false);
             console.log("%c " + successMsg, "color: green; font-weight: bold;");

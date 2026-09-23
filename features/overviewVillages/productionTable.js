@@ -55,6 +55,65 @@ function renderActiveQueueIcons(cell, villageId, doc) {
 }
 
 /**
+ * Returns the current first waiting-item status for the overview tooltip.  This deliberately
+ * reads BuildState and the scheduler on every refresh of the live tooltip: a due time captured
+ * when the row was rendered can become obsolete after lease contention, an edit defer, or a
+ * soft-pause rearm.
+ */
+function getBuildQueueOverviewWaitingStatus(villageId) {
+    const vId = String(villageId);
+    const record = window.PremiumFeaturesBuildState?.get?.(vId) || {};
+    const execution = record.execution || {};
+    const controller = typeof ensureBuildQueueController === 'function' ? ensureBuildQueueController() : null;
+    const taskKey = controller?.taskKey ? controller.taskKey(vId) : 'build-queue:reconcile:' + vId;
+    const task = window.PremiumFeaturesBackgroundScheduler?.describe?.(taskKey) || null;
+    const persistedDueAt = parseInt(localStorage.getItem('endTime_' + getBuildQueueTimeoutId(vId)), 10) || 0;
+    const dueAt = Number(task?.dueAt) || Number(execution.nextDueAt) || persistedDueAt;
+    const remaining = dueAt - Date.now();
+    const time = remaining > 0 ? formatQueueRemaining(remaining) : null;
+    if (task?.hardStopped || window.PremiumFeaturesBackgroundScheduler?.stats?.().hardStopped) {
+        return { kind: 'HARD_STOP', dueAt, time: null };
+    }
+    if (task?.state === 'WAITING_LEASE') return { kind: 'WAITING_LEASE', dueAt, time };
+    if (task?.state === 'RUNNING' || execution.state === window.BUILD_QUEUE_STATE?.RECONCILING ||
+        execution.state === window.BUILD_QUEUE_STATE?.EXECUTING) return { kind: 'RECONCILING', dueAt, time };
+    if (task?.state === 'DEFERRED') return { kind: 'INTERACTION_DEFERRED', dueAt, time };
+    if (execution.state === window.BUILD_QUEUE_STATE?.UNCERTAIN) return { kind: 'UNCERTAIN', dueAt, time };
+    if (execution.state === window.BUILD_QUEUE_STATE?.SOFT_PAUSED) return { kind: 'SOFT_PAUSED', dueAt, time };
+    if (execution.state === window.BUILD_QUEUE_STATE?.WAITING_SLOT) return { kind: 'WAITING_SLOT', dueAt, time };
+    if (execution.state === window.BUILD_QUEUE_STATE?.WAITING_POPULATION) return { kind: 'WAITING_POPULATION', dueAt, time };
+    if (execution.state === window.BUILD_QUEUE_STATE?.WAITING_RESOURCES) return { kind: 'WAITING_RESOURCES', dueAt, time };
+    if (remaining > 0) return { kind: 'COUNTDOWN', dueAt, time };
+    return { kind: 'OVERDUE', dueAt, time: null };
+}
+
+function renderBuildQueueOverviewWaitingStatus(villageId) {
+    const status = getBuildQueueOverviewWaitingStatus(villageId);
+    if (status.kind === 'COUNTDOWN') {
+        return `<div style="margin-top:3px;border-top:1px solid #c1a264;padding-top:3px;color:#888;">${t('buildQueue.nextAttemptIn', { time: status.time })}</div>`;
+    }
+    const keys = {
+        RECONCILING: 'buildQueue.statusReconciling',
+        WAITING_LEASE: 'buildQueue.statusWaitingTab',
+        INTERACTION_DEFERRED: 'buildQueue.statusInteractionDeferred',
+        HARD_STOP: 'buildQueue.statusHardStop',
+        UNCERTAIN: 'buildQueue.statusUncertain',
+        SOFT_PAUSED: 'buildQueue.statusSoftPause',
+        WAITING_SLOT: 'buildQueue.statusWaitingSlot',
+        WAITING_POPULATION: 'buildQueue.statusWaitingPopulation',
+        WAITING_RESOURCES: 'buildQueue.statusWaitingResources',
+        OVERDUE: 'buildQueue.statusOverdue'
+    };
+    const color = status.kind === 'HARD_STOP' ? '#a00' :
+        (status.kind === 'UNCERTAIN' || status.kind === 'SOFT_PAUSED' || status.kind === 'OVERDUE') ? '#a60' : '#777';
+    const statusLine = `<div style="margin-top:3px;color:${color};">${t(keys[status.kind] || keys.OVERDUE)}</div>`;
+    const nextLine = status.time
+        ? `<div style="margin-top:2px;color:#888;">${t('buildQueue.nextAttemptIn', { time: status.time })}</div>`
+        : '';
+    return statusLine + nextLine;
+}
+
+/**
  * Renders the WAITING (fake/local, not yet submitted to the server) queue items for a village:
  * one icon per item, orange progress bar, tooltip shows "Next attempt in" (first item, live
  * countdown to the script's next retry) or "Position N in waiting queue" (further items) — same
@@ -68,19 +127,11 @@ function renderFakeQueueIcons(cell, villageId, allBuildingsImgs, doc) {
     const queueBuildIds = bqGet('building_queue', villageId) || [];
     if (!queueBuildIds.length) return;
 
-    // Scheduled time (ms epoch) when addToBuildQueue() will next fire for this village
-    const scheduledEndTime = parseInt(localStorage.getItem('endTime_' + getBuildQueueTimeoutId(villageId))) || 0;
-
     queueBuildIds.forEach(function (id, fakeIndex) {
         const buildingName = doc.querySelector('.visual-label-' + id)?.getAttribute('data-title') || id;
 
         function getBodyHtml() {
-            if (fakeIndex === 0 && scheduledEndTime > 0) {
-                const fmt = formatQueueRemaining(scheduledEndTime - Date.now());
-                return fmt
-                    ? `<div style="margin-top:3px;border-top:1px solid #c1a264;padding-top:3px;color:#888;">${t('buildQueue.nextAttemptIn', { time: fmt })}</div>`
-                    : `<div style="margin-top:3px;color:#aaa;">${t('buildQueue.retryingSoon')}</div>`;
-            }
+            if (fakeIndex === 0) return renderBuildQueueOverviewWaitingStatus(villageId);
             if (fakeIndex > 0) {
                 return `<div style="margin-top:3px;border-top:1px solid #c1a264;padding-top:3px;color:#aaa;">${t('buildQueue.positionInQueue', { position: fakeIndex + 1 })}</div>`;
             }
@@ -204,10 +255,9 @@ function applyBuildQueueOverviewCollapse(cell) {
 /**
  * Adds a "Build Queue" column to the multi-village table (#production_table) on the
  * screen=overview_villages page, showing each village's active build queue at a glance.
- * Only runs when the account has more than one village (that page/table is meaningless
- * otherwise). For every village row, fetches its main-building page in the background to
- * get fresh queue state (persisted via parseAndStoreQueueState, same mechanism used by the
- * per-village widget and the background sweep), then renders the summary cell.
+ * Only runs when the account has more than one village. Cached local/official state renders
+ * immediately; a village with no snapshot is loaded only when its cell receives pointer or
+ * keyboard interest, avoiding an all-village request burst on every overview visit.
  */
 function injectOverviewVillagesBuildQueueColumn() {
     if (!settings_cookies.general['show__overview_villages_queue']) return;
@@ -241,39 +291,48 @@ function injectOverviewVillagesBuildQueueColumn() {
     th.appendChild(toggleIcon);
     headerRow.appendChild(th);
 
-    const rowsToFetch = [];
     table.querySelectorAll('tbody tr').forEach(function (row) {
         const villageId = row.querySelector('.quickedit-vn[data-id]')?.getAttribute('data-id');
         if (!villageId) return;
 
         const cell = document.createElement('td');
         cell.className = 'build-queue-overview-cell';
-        cell.appendChild(createWidgetLoadingElement('30px'));
-        cell.setAttribute('aria-busy', 'true');
         cell.style.textAlign = 'center';
         row.appendChild(cell);
 
-        rowsToFetch.push({ villageId, cell });
-    });
+        const cached = window.PremiumFeaturesBuildState?.get?.(villageId);
+        const cachedImages = cached?.official?.catalog?.allBuildingsImgs || [];
+        if (cached?.official?.fetchedAt || cached?.queue?.length) {
+            renderBuildQueueOverviewCell(cell, villageId, document, cachedImages);
+            cell.dataset.twpfFreshness = 'stale';
+            return;
+        }
 
-    // Throttled (max 2 concurrent, staggered) so accounts with many villages don't burst one
-    // request per village at once and trip the server's rate limiter (HTTP 429).
-    runWithConcurrencyLimit(rowsToFetch, function ({ villageId, cell }) {
-        return fetchVillageMainPage(villageId)
-            .then(({ doc }) => {
-                parseAndStoreQueueState(doc, villageId);
-                // Re-arm the instant-free timer too, not just the fake/waiting queue state
-                if (typeof scheduleCompletionNotification === 'function') scheduleCompletionNotification(villageId);
+        // An unseen village has no useful local snapshot yet.  Load it on explicit interest,
+        // rather than turning every overview visit (and every tab) into an all-village burst.
+        cell.textContent = '…';
+        cell.tabIndex = 0;
+        const load = function () {
+            if (cell.dataset.buildQueueLoadStarted) return;
+            cell.dataset.buildQueueLoadStarted = '1';
+            cell.replaceChildren(createWidgetLoadingElement('30px'));
+            cell.setAttribute('aria-busy', 'true');
+            fetchVillageMainPage(villageId).then(({ doc }) => {
+                if (typeof observeBuildQueueDocument === 'function') observeBuildQueueDocument(doc, villageId, 'overview-interest');
+                else parseAndStoreQueueState(doc, villageId);
                 const { allBuildingsImgs } = getAllBuildingsImages(doc);
                 renderBuildQueueOverviewCell(cell, villageId, doc, allBuildingsImgs);
-            })
-            .catch(() => {
-                cell.innerHTML = '?';
+                cell.dataset.twpfFreshness = 'fresh';
+            }).catch(() => {
+                cell.textContent = '?';
                 cell.removeAttribute('aria-busy');
-                cell.style.textAlign = 'center';
                 cell.style.color = '#c33';
+                delete cell.dataset.buildQueueLoadStarted;
             });
-    }, { concurrency: 2, minDelay: 100, maxDelay: 250 });
+        };
+        cell.addEventListener('mouseenter', load, { once: true });
+        cell.addEventListener('focus', load, { once: true });
+    });
 }
 
 // Fixed column order for the per-unit troop columns (screen=overview_villages), matches the
@@ -405,4 +464,3 @@ function injectOverviewVillagesStorageHover() {
         attachStorageOverviewHover(cell, villageId);
     });
 }
-

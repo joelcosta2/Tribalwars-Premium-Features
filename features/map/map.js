@@ -9,11 +9,11 @@ async function getOutgoingCommandsFromOverview() {
     if (!isMapHoverInfoEnabled() && !general['show__outgoingInfo_map']) {
         return;
     }
-
-    // Time-gate: skip fetch if synced within the last 3 minutes.
-    // Uses a session variable (not localStorage) so every page load fetches fresh data.
-    const OUTGOING_TTL_MS = 3 * 60 * 1000;
-    if ((Date.now() - _outgoingCommandsLastFetch) < OUTGOING_TTL_MS) {
+    const outgoingRetryAt = Number(localStorage.getItem('outgoing_commands_retry_at')) || 0;
+    if (outgoingRetryAt > Date.now()) {
+        window.PremiumFeaturesDiagnostics?.record?.({
+            feature: 'outgoing', logicalResource: 'outgoing', status: 'SOFT_PAUSE', reason: 'outgoing-backoff'
+        });
         if (general['show__outgoingInfo_map'] && typeof mapReady === 'function') {
             await mapReady();
             addOutgoingIcons();
@@ -21,9 +21,57 @@ async function getOutgoingCommandsFromOverview() {
         return;
     }
 
-    try {
-        const response = await fetch(game_data.link_base_pure + 'overview');
+    // Time-gate survives full reloads. A command created by this mod invalidates it explicitly.
+    const OUTGOING_TTL_MS = 3 * 60 * 1000;
+    _outgoingCommandsLastFetch = Math.max(
+        _outgoingCommandsLastFetch,
+        Number(localStorage.getItem('outgoing_commands_fetched_at')) || 0
+    );
+    const invalidatedAt = Number(localStorage.getItem('outgoing_commands_invalidated_at')) || 0;
+    if (_outgoingCommandsLastFetch >= invalidatedAt && (Date.now() - _outgoingCommandsLastFetch) < OUTGOING_TTL_MS) {
+        window.PremiumFeaturesDiagnostics?.record?.({
+            feature: 'outgoing', logicalResource: 'outgoing', status: 'CACHE_HIT', reason: 'outgoing-ttl'
+        });
+        if (general['show__outgoingInfo_map'] && typeof mapReady === 'function') {
+            await mapReady();
+            addOutgoingIcons();
+        }
+        return;
+    }
+    if (general['show__outgoingInfo_map'] && localStorage.getItem('outgoing_units_saved')) {
+        window.PremiumFeaturesDiagnostics?.record?.({
+            feature: 'outgoing', logicalResource: 'outgoing', status: 'STALE_HIT', reason: 'outgoing-swr'
+        });
+        mapReady().then(addOutgoingIcons).catch(() => {});
+    }
+
+    const execute = async function () {
+      try {
+        const latestFetchedAt = Number(localStorage.getItem('outgoing_commands_fetched_at')) || 0;
+        const latestInvalidatedAt = Number(localStorage.getItem('outgoing_commands_invalidated_at')) || 0;
+        if (latestFetchedAt >= latestInvalidatedAt && Date.now() - latestFetchedAt < OUTGOING_TTL_MS) {
+            _outgoingCommandsLastFetch = latestFetchedAt;
+            window.PremiumFeaturesDiagnostics?.record?.({
+                feature: 'outgoing', logicalResource: 'outgoing', status: 'CACHE_HIT', reason: 'lease-wait-ttl-recheck'
+            });
+            return;
+        }
+        const url = game_data.link_base_pure + 'overview';
+        const request = () => fetch(url);
+        const response = await (window.PremiumFeaturesDiagnostics?.request
+            ? window.PremiumFeaturesDiagnostics.request({
+                feature: 'outgoing', logicalResource: 'outgoing', method: 'GET', reason: 'ttl-expired'
+            }, request)
+            : request());
+        if (!response.ok) {
+            const error = new Error('HTTP ' + response.status);
+            error.status = response.status;
+            error.url = response.url || url;
+            throw error;
+        }
         const htmlText = await response.text();
+        localStorage.removeItem('outgoing_commands_retry_at');
+        localStorage.removeItem('outgoing_commands_failure_count');
 
         // Parse the HTML response
         const parser = new DOMParser();
@@ -35,6 +83,8 @@ async function getOutgoingCommandsFromOverview() {
             localStorage.setItem('outgoing_commands_detailed', JSON.stringify([]));
             _outgoingCommandsCache = [];
             _outgoingCommandsDetailedCache = [];
+            _outgoingCommandsLastFetch = Date.now();
+            localStorage.setItem('outgoing_commands_fetched_at', String(_outgoingCommandsLastFetch));
             return;
         }
 
@@ -84,6 +134,8 @@ async function getOutgoingCommandsFromOverview() {
         localStorage.setItem('outgoing_units_saved', JSON.stringify(outgoing_units));
         localStorage.setItem('outgoing_commands_detailed', JSON.stringify(outgoingCommandsDetailed));
         _outgoingCommandsLastFetch = Date.now();
+        localStorage.setItem('outgoing_commands_fetched_at', String(_outgoingCommandsLastFetch));
+        localStorage.removeItem('outgoing_commands_invalidated_at');
         _outgoingCommandsCache = outgoing_units;
         _outgoingCommandsDetailedCache = outgoingCommandsDetailed;
         if (general['show__outgoingInfo_map'] && typeof mapReady === 'function') {
@@ -92,18 +144,67 @@ async function getOutgoingCommandsFromOverview() {
         }
     } catch (error) {
         console.error('[Outgoing Commands] Failed to fetch overview data:', error);
+        const failure = window.PremiumFeaturesAsync?.classifyRequestFailure?.(error, {
+            url: error?.url || game_data.link_base_pure + 'overview'
+        }) || {};
+        if (failure.transient) {
+            const backoffMs = [30000, 60000, 120000, 300000, 600000];
+            const count = (Number(localStorage.getItem('outgoing_commands_failure_count')) || 0) + 1;
+            localStorage.setItem('outgoing_commands_failure_count', String(count));
+            localStorage.setItem('outgoing_commands_retry_at', String(Date.now() + backoffMs[Math.min(count - 1, backoffMs.length - 1)]));
+            window.PremiumFeaturesDiagnostics?.record?.({
+                feature: 'outgoing', logicalResource: 'outgoing', status: 'SOFT_PAUSE', reason: 'outgoing-fetch-failed'
+            });
+        }
     }
+    };
+    const coalesced = () => window.PremiumFeaturesSingleFlight?.run
+        ? window.PremiumFeaturesSingleFlight.run('outgoing', execute)
+        : execute();
+    const scheduler = window.PremiumFeaturesBackgroundScheduler;
+    if (scheduler?.enqueue) {
+        return scheduler.enqueue({
+            key: 'outgoing:sync',
+            priority: scheduler.PRIORITY?.REFRESH || 4,
+            dueMode: scheduler.DUE_MODE?.EARLIEST || 'EARLIEST',
+            leaseKey: 'outgoing',
+            rerunWhileActive: true,
+            run: coalesced
+        });
+    }
+    return coalesced();
 }
 
-const mapReady = () => new Promise(resolve => {
-    const check = setInterval(() => {
-        if (document.querySelector("[id^='map_village_']")) {
+function invalidateOutgoingCommandsCache(reason) {
+    const at = Date.now();
+    _outgoingCommandsLastFetch = 0;
+    localStorage.setItem('outgoing_commands_invalidated_at', String(at));
+    window.PremiumFeaturesCoordination?.broadcast?.('logical-resource-invalidated', {
+        logicalResource: 'outgoing', reason: reason || 'known-command-change', at
+    });
+}
+
+let _mapReadyPromise = null;
+const mapReady = () => {
+    if (document.querySelector("[id^='map_village_']")) return Promise.resolve();
+    if (_mapReadyPromise) return _mapReadyPromise;
+    _mapReadyPromise = new Promise(resolve => {
+        let settled = false;
+        let timeout = null;
+        const finish = function () {
+            if (settled) return;
+            settled = true;
             clearInterval(check);
+            if (timeout !== null) clearTimeout(timeout);
             resolve();
-        }
-    }, 200);
-    setTimeout(() => { clearInterval(check); resolve(); }, 10000);
-});
+        };
+        const check = setInterval(() => {
+            if (document.querySelector("[id^='map_village_']")) finish();
+        }, 200);
+        timeout = setTimeout(finish, 10000);
+    }).finally(() => { _mapReadyPromise = null; });
+    return _mapReadyPromise;
+};
 
 function addOutgoingIcons() {
     if (_outgoingCommandsCache === null) {
@@ -298,7 +399,7 @@ function rebuildReportHeatmapMapSdkElements() {
  */
 async function getReportsList() {
     if (!window.TWPFMapReports || !isMapHoverInfoEnabled('lastAttack')) return;
-    return window.TWPFMapReports.sync({ force: true });
+    return window.TWPFMapReports.sync();
 }
 
 /**
@@ -308,8 +409,9 @@ async function getReportsList() {
 async function syncMapReportsOnLoad() {
     const reportsManager = window.TWPFMapReports;
     if (!reportsManager) return;
+    if (!reportsManager.isEnabled?.() && !isMapHoverInfoEnabled('lastAttack')) return;
 
-    const syncResult = await reportsManager.sync({ force: true });
+    const syncResult = await reportsManager.sync();
     if (syncResult?.changed || reportsManager.needsInitialBuild?.()) {
         await reportsManager.rebuild?.();
     }
@@ -657,8 +759,30 @@ function insertOwnVillageDetailsRows(tgtVillage, popUpBody) {
  * for the village currently under the cursor. Fetches and caches full report details
  * on first access via fetch.
  */
+function isMapPopupStillShowingVillage(village) {
+    const popup = document.getElementById('map_popup');
+    return Boolean(village && TWMap?.popup?._currentVillage === village.id && popup?.isConnected &&
+        popup.style.display !== 'none');
+}
+
+async function hydrateReportForCurrentMapHover(report, village, popupBody) {
+    if (!isMapPopupStillShowingVillage(village)) {
+        window.PremiumFeaturesDiagnostics?.record?.({
+            feature: 'reports', logicalResource: 'report:' + String(report?.id || ''),
+            status: 'SKIPPED', reason: 'hover-ended-before-start'
+        });
+        return null;
+    }
+    const hydrated = await window.TWPFMapReports.hydrateFullReport(report);
+    // Do not cancel an in-flight immutable report read; simply discard visual work if the user
+    // has moved to another village by the time it settles.
+    if (hydrated && isMapPopupStillShowingVillage(village)) insertReportData(hydrated, popupBody);
+    return hydrated;
+}
+
 async function getReportInfoToMap(currentCoords, currentPopUpBody) {
     if (!isMapHoverInfoEnabled()) return;
+    clearTimeout(_moraleHoverIntentTimer);
 
     // --- Morale (server-authoritative via the game's calculate_morale API) ---
     // The formula-based approach is unreliable: it ignores whether morale is enabled
@@ -697,7 +821,7 @@ async function getReportInfoToMap(currentCoords, currentPopUpBody) {
             // TWMap.popup._currentVillage guards against injecting into a different village's popup.
             const injectMoraleRow = (morale) => {
                 document.getElementById('info_morale')?.remove();
-                if (TWMap.popup._currentVillage !== tgtVillage.id) return;
+                if (!isMapPopupStillShowingVillage(tgtVillage)) return;
                 const liveBody = document.getElementById('map_popup')?.querySelector('tbody');
                 if (!liveBody) return;
                 const color = morale >= 90 ? '#4caf50' : morale >= 70 ? '#ff9800' : morale >= 50 ? '#ff5722' : '#f44336';
@@ -712,41 +836,21 @@ async function getReportInfoToMap(currentCoords, currentPopUpBody) {
                 liveBody.appendChild(moraleRow);
             };
 
-            if (_moraleCache.has(ownerId)) {
-                injectMoraleRow(_moraleCache.get(ownerId));
-            } else {
-                // Async: fire the same POST the game's MoraleCalculator uses.
-                // Passes the defender name so the server can resolve days_played server-side.
-                (async () => {
-                    try {
-                        // When defender_name is known, pass empty defender_points so
-                        // the server does a full player lookup (resolves real points +
-                        // days_played for accurate time-based morale).
-                        // Fall back to local points only if name is unavailable.
-                        const body = new URLSearchParams({
-                            attacker_points: game_data.player.points,
-                            defender_name:   defName,
-                            defender_points: defName ? '' : defPoints,
-                            days_played:     0,
-                            perspective:     'attacker',
-                            h:               game_data.csrf
-                        });
-                        const resp = await fetch(
-                            `${game_data.link_base_pure}place&ajax=calculate_morale&type=morale`,
-                            { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' }, body: body.toString() }
-                        );
-                        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                        const json = await resp.json();
-                        const morale = json?.morale;
-                        if (morale != null) {
-                            _moraleCache.set(ownerId, morale);
-                            injectMoraleRow(morale);
-                        }
-                    } catch (e) {
-                        console.warn('[Morale] API call failed:', e);
-                    }
-                })();
-            }
+            _moraleHoverIntentTimer = setTimeout(async () => {
+                if (!isMapPopupStillShowingVillage(tgtVillage)) {
+                    window.PremiumFeaturesDiagnostics?.record?.({
+                        feature: 'morale', logicalResource: 'morale:' + ownerId,
+                        status: 'SKIPPED', reason: 'hover-ended-before-start'
+                    });
+                    return;
+                }
+                try {
+                    const morale = await getMoraleForOwner(ownerId, defName, defPoints);
+                    if (morale != null) injectMoraleRow(morale);
+                } catch (error) {
+                    console.warn('[Morale] API call failed:', error);
+                }
+            }, MORALE_HOVER_INTENT_MS);
         }
     }
 
@@ -759,8 +863,7 @@ async function getReportInfoToMap(currentCoords, currentPopUpBody) {
             const report = reports_list[i];
 
             if (report.coords.includes(currentCoords)) {
-                const hydratedReport = await window.TWPFMapReports.hydrateFullReport(report);
-                if (hydratedReport) insertReportData(hydratedReport, currentPopUpBody);
+                await hydrateReportForCurrentMapHover(report, tgtVillage, currentPopUpBody);
                 break;
             }
         }
@@ -1083,9 +1186,8 @@ let _outgoingCommandsCache = null;
 // parallel to _outgoingCommandsCache, which stays aggregated for the map icon overlay.
 let _outgoingCommandsDetailedCache = null;
 
-// Session-only TTL for outgoing commands fetch — resets on every page load
-// so a refresh always gets fresh data from the server.
-let _outgoingCommandsLastFetch = 0;
+// Persisted TTL prevents a full/partial reload from manufacturing a refresh reason.
+let _outgoingCommandsLastFetch = Number(localStorage.getItem('outgoing_commands_fetched_at')) || 0;
 
 // Batches icon refreshes so several sectors spawning during one drag gesture trigger a
 // single rebuild instead of one per sector.
@@ -1104,9 +1206,109 @@ function scheduleMapIconsRefresh() {
 // Cache for unit speed data — set once at startup, safe to hold in memory.
 let _unitSpeedsCache = null;
 
-// Per-session morale cache keyed by enemy player ID.
-// Avoids a POST request on every re-hover of the same player's village.
-const _moraleCache = new Map();
+const MORALE_CACHE_TTL_MS = 10 * 60 * 1000;
+const MORALE_BACKOFF_MS = [30000, 60000, 120000, 300000, 600000];
+const MORALE_HOVER_INTENT_MS = 250;
+let _moraleHoverIntentTimer = null;
+let _moraleCacheEntries = [];
+try { _moraleCacheEntries = JSON.parse(localStorage.getItem('twpf_morale_cache_v1') || '[]'); } catch (_error) { /* empty */ }
+const _moraleCache = new Map(Array.isArray(_moraleCacheEntries) ? _moraleCacheEntries : []);
+
+function persistMoraleCache() {
+    const serialized = JSON.stringify(Array.from(_moraleCache.entries()).slice(-100));
+    if (window.PremiumFeaturesWriteBehind?.set) {
+        window.PremiumFeaturesWriteBehind.set('twpf_morale_cache_v1', serialized);
+    } else {
+        localStorage.setItem('twpf_morale_cache_v1', serialized);
+    }
+}
+
+async function getMoraleForOwner(ownerId, defenderName, defenderPoints) {
+    const logicalKey = 'morale:' + String(ownerId);
+    const cached = _moraleCache.get(String(ownerId));
+    if (cached && Number(cached.failedUntil || 0) > Date.now()) {
+        window.PremiumFeaturesDiagnostics?.record?.({
+            feature: 'morale', logicalResource: logicalKey, status: 'SOFT_PAUSE', reason: 'morale-backoff'
+        });
+        return cached.value ?? null;
+    }
+    if (cached && Date.now() - Number(cached.fetchedAt || 0) < MORALE_CACHE_TTL_MS) {
+        window.PremiumFeaturesDiagnostics?.record?.({
+            feature: 'morale', logicalResource: logicalKey, status: 'CACHE_HIT', reason: 'morale-ttl'
+        });
+        return cached.value;
+    }
+    const load = async function () {
+        const body = new URLSearchParams({
+            attacker_points: game_data.player.points,
+            defender_name: defenderName || '',
+            defender_points: defenderName ? '' : defenderPoints,
+            days_played: 0,
+            perspective: 'attacker',
+            h: game_data.csrf
+        });
+        const url = `${game_data.link_base_pure}place&ajax=calculate_morale&type=morale`;
+        const run = () => fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            body: body.toString()
+        });
+        const response = await (window.PremiumFeaturesDiagnostics?.request
+            ? window.PremiumFeaturesDiagnostics.request({
+                feature: 'morale', logicalResource: logicalKey, method: 'POST', reason: 'hover-intent'
+            }, run)
+            : run());
+        if (!response.ok) {
+            const responseError = new Error(`HTTP ${response.status}`);
+            responseError.status = response.status;
+            responseError.url = response.url || url;
+            throw responseError;
+        }
+        const morale = (await response.json())?.morale;
+        if (morale == null) return null;
+        _moraleCache.set(String(ownerId), { value: morale, fetchedAt: Date.now() });
+        persistMoraleCache();
+        return morale;
+    };
+    const scheduledLoad = function () {
+        const scheduler = window.PremiumFeaturesBackgroundScheduler;
+        if (!scheduler?.enqueue) return load();
+        return scheduler.enqueue({
+            key: 'manual:' + logicalKey,
+            priority: scheduler.PRIORITY?.MANUAL || 1,
+            dueMode: scheduler.DUE_MODE?.EARLIEST || 'EARLIEST',
+            run: load
+        }).then(result => {
+            if (result?.status !== 'COMPLETED') throw result?.error || new Error('Morale task did not complete');
+            return result.value;
+        });
+    };
+    const loadWithSoftPause = function () {
+        return scheduledLoad().catch(error => {
+            const failure = window.PremiumFeaturesAsync?.classifyRequestFailure?.(error, {
+                url: error?.url || `${game_data.link_base_pure}place&ajax=calculate_morale&type=morale`
+            }) || {};
+            if (failure.transient) {
+                const latest = _moraleCache.get(String(ownerId)) || {};
+                const failureCount = Number(latest.failureCount || 0) + 1;
+                _moraleCache.set(String(ownerId), {
+                    value: latest.value ?? null,
+                    fetchedAt: Number(latest.fetchedAt) || 0,
+                    failureCount,
+                    failedUntil: Date.now() + MORALE_BACKOFF_MS[Math.min(failureCount - 1, MORALE_BACKOFF_MS.length - 1)]
+                });
+                persistMoraleCache();
+                window.PremiumFeaturesDiagnostics?.record?.({
+                    feature: 'morale', logicalResource: logicalKey, status: 'SOFT_PAUSE', reason: 'morale-request-failed'
+                });
+            }
+            throw error;
+        });
+    };
+    return window.PremiumFeaturesSingleFlight?.run
+        ? window.PremiumFeaturesSingleFlight.run(logicalKey, loadWithSoftPause)
+        : loadWithSoftPause();
+}
 
 // Map-based LRU cache for village ID lookups (max 10 entries)
 const _villageCache = new Map();
@@ -1364,7 +1566,19 @@ function initializeTroopTemplates(targetID, isBarbarian = false, renderToken = _
     });
 }
 
-if (typeof TWMap !== 'undefined' && !isPremiumAccount()) {
+if (typeof TWMap !== 'undefined') {
+    const mapContainerForIntent = document.getElementById('map_container');
+    if (mapContainerForIntent && window.PremiumFeaturesRuntimeRegistry?.addEventListener) {
+        window.PremiumFeaturesRuntimeRegistry.addEventListener(
+            'map:hover-intent-cancel',
+            mapContainerForIntent,
+            'mouseleave',
+            function () {
+                clearTimeout(_moraleHoverIntentTimer);
+                clearTimeout(_ownVillageHoverIntentTimer);
+            }
+        );
+    }
     // Hide native Farm Assistant context buttons if the feature is not active for this account
     if (!game_data.features?.FarmAssistent?.active) {
         const style = document.createElement('style');

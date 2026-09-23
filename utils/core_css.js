@@ -562,6 +562,4 @@ var customCSS = `
 }
 
 `;
-if (!isPremiumAccount()) {
-    GM_addStyle(customCSS);
-}
+GM_addStyle(customCSS);

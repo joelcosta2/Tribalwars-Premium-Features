@@ -349,6 +349,62 @@ function bqRemove(field, villageId) {
 }
 
 /**
+ * Applies several per-village fields to the synchronous cache without issuing one IndexedDB
+ * transaction per field.  Build Queue v2 uses this while replaying its durable local event log;
+ * legacy bqSet/bqRemove callers keep their original immediate write-behind behaviour.
+ * @param {Object} fields
+ * @param {string|number} [villageId]
+ * @returns {Object} The updated in-memory record.
+ */
+function bqPatchMemory(fields, villageId) {
+    const vId = normalizeBuildQueueVillageId(villageId);
+    const current = buildQueueMemoryCache[vId] || {};
+    buildQueueMemoryCache[vId] = Object.assign({}, current, fields || {});
+    return buildQueueMemoryCache[vId];
+}
+
+/**
+ * Persists one coherent snapshot of a village record.  The value is cloned before the async
+ * IndexedDB open/transaction so a later in-memory edit cannot change what this flush commits.
+ * @param {string|number} [villageId]
+ * @returns {Promise<void>}
+ */
+function bqPersistVillage(villageId) {
+    const vId = normalizeBuildQueueVillageId(villageId);
+    const current = buildQueueMemoryCache[vId] || {};
+    let snapshot;
+    try {
+        snapshot = typeof structuredClone === 'function'
+            ? structuredClone(current)
+            : JSON.parse(JSON.stringify(current));
+    } catch (_error) {
+        snapshot = Object.assign({}, current);
+    }
+    return idbSet(vId, snapshot);
+}
+
+/** Applies a coherent multi-field patch and optionally persists it as one record write. */
+function bqPatch(fields, villageId, options = {}) {
+    const record = bqPatchMemory(fields, villageId);
+    if (options.persist !== false) bqPersistVillage(villageId);
+    return record;
+}
+
+window.PremiumFeaturesBuildQueueStorage = Object.assign(
+    window.PremiumFeaturesBuildQueueStorage || {},
+    {
+        get: bqGet,
+        patchMemory: bqPatchMemory,
+        patch: bqPatch,
+        persistVillage: bqPersistVillage,
+        listVillageIds: function () { return Object.keys(buildQueueMemoryCache); },
+        getRecord: function (villageId) {
+            return buildQueueMemoryCache[normalizeBuildQueueVillageId(villageId)] || null;
+        }
+    }
+);
+
+/**
  * Loads every village's persisted build-queue record into the in-memory cache. Must complete
  * before any bqGet/bqSet call site runs (called once at boot, before restoreTimeouts()/start()).
  * @returns {Promise<void>} Resolves even if IndexedDB is unavailable (cache just stays empty).

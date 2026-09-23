@@ -36,7 +36,11 @@ function parseVillageBuildingLevels(doc) {
  * @returns {Promise<{[buildingId:string]: number}|null>} Resolves to null on failure/no data.
  */
 function fetchAndStoreVillageBuildingLevels(villageId) {
-    return fetchVillageMainPage(villageId).then(({ doc }) => {
+    return fetchVillageMainPage(villageId).then(result => {
+        const { doc } = result;
+        if (!result.buildStateObservation && typeof observeBuildQueueDocument === 'function') {
+            result.buildStateObservation = observeBuildQueueDocument(doc, villageId, 'building-levels');
+        }
         const levels = parseVillageBuildingLevels(doc);
         if (levels) {
             bqSet(VILLAGE_BUILDING_LEVELS_FIELD, villageId, levels);

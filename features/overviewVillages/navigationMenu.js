@@ -153,7 +153,7 @@ function getOverviewVillagesLastTabStorageKey() {
 }
 
 function injectOverviewVillagesTopbarMenu() {
-    if (typeof isPremiumAccount === 'function' && isPremiumAccount()) return;
+    if (getSetting('show__overview_villages_topbar_menu') === false) return;
     if (document.getElementById('overview-villages-topbar-menu')) return;
 
     const overviewLink = Array.from(document.querySelectorAll('#menu_row > td.menu-item > a')).find(function (link) {

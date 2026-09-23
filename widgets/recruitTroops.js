@@ -10,6 +10,12 @@
  */
 var liveRecruitContext = null;
 
+const RECRUIT_MUTATION_OUTCOME = Object.freeze({
+    CONFIRMED: 'CONFIRMED',
+    FAILED: 'FAILED',
+    UNCERTAIN: 'UNCERTAIN'
+});
+
 function setButtonLoadingState(button, isLoading, fallbackLabel) {
     if (!button) return;
 
@@ -27,10 +33,194 @@ function setButtonLoadingState(button, isLoading, fallbackLabel) {
     delete button.dataset.originalContent;
 }
 
-function refreshRecruitWidgetAfterDelay(delayMs = 1000) {
-    setTimeout(() => {
-        if (typeof injectRecruitTroopsWidget === 'function') injectRecruitTroopsWidget();
-    }, delayMs);
+function readRecruitQueueSnapshot(villageId, units) {
+    const queue = bqGet('train_queue_data', villageId) || {};
+    return Object.fromEntries(Object.keys(units || {}).map(function (unit) {
+        return [unit, Math.max(0, Number(queue[unit]) || 0)];
+    }));
+}
+
+function recruitUncertainStorageKey(villageId) {
+    return 'twpf_recruit_uncertain:' + String(villageId);
+}
+
+function loadRecruitUncertain(villageId) {
+    try {
+        const value = JSON.parse(localStorage.getItem(recruitUncertainStorageKey(villageId)) || 'null');
+        return value && typeof value === 'object' && value.units && value.before ? value : null;
+    } catch (_error) {
+        return null;
+    }
+}
+
+function setRecruitUncertain(ctx, value) {
+    ctx.recruitUncertain = value;
+    if (value) localStorage.setItem(recruitUncertainStorageKey(ctx.villageId), JSON.stringify(value));
+    else localStorage.removeItem(recruitUncertainStorageKey(ctx.villageId));
+}
+
+function classifyRecruitReconciliation(before, after, submittedUnits) {
+    const units = Object.keys(submittedUnits || {});
+    if (!units.length) return 'UNKNOWN';
+    const applied = units.every(function (unit) {
+        return (Number(after?.[unit]) || 0) >= (Number(before?.[unit]) || 0) + (Number(submittedUnits[unit]) || 0);
+    });
+    if (applied) return 'APPLIED';
+    // A training queue can drain between the POST and GET. Equal totals do not prove that a
+    // transmitted request was rejected; keep the ambiguity instead of authorizing a duplicate.
+    return 'UNKNOWN';
+}
+
+function recruitMutationError(message, fields) {
+    return Object.assign(new Error(message), fields || {});
+}
+
+async function executeRecruitMutation(ctx, submittedUnits) {
+    const url = `${ctx.linkBase}train&ajaxaction=train&mode=train`;
+    if (!ctx?.linkBase || window.PremiumFeaturesBotProtection?.isActive?.()) {
+        return { status: RECRUIT_MUTATION_OUTCOME.FAILED, error: recruitMutationError('Recruit unavailable before transmission') };
+    }
+
+    const bodyData = new URLSearchParams();
+    Object.entries(submittedUnits).forEach(([unit, qty]) => bodyData.append(`units[${unit}]`, qty));
+    bodyData.append('h', game_data.csrf);
+    let transmitted = false;
+    let abortTimer = null;
+    try {
+        const abortController = typeof AbortController === 'function' ? new AbortController() : null;
+        const request = fetch(url, {
+            headers: {
+                'accept': 'application/json, text/javascript, */*; q=0.01',
+                'priority': 'u=1, i',
+                'tribalwars-ajax': '1',
+                'x-requested-with': 'XMLHttpRequest',
+                'content-type': 'application/x-www-form-urlencoded; charset=UTF-8'
+            },
+            referrer: `${ctx.linkBase}train`,
+            body: bodyData.toString(),
+            method: 'POST',
+            credentials: 'include',
+            signal: abortController?.signal
+        });
+        transmitted = true;
+        if (abortController) abortTimer = setTimeout(function () { abortController.abort(); }, 15000);
+        const response = await (window.PremiumFeaturesDiagnostics?.request
+            ? window.PremiumFeaturesDiagnostics.request({
+                feature: 'recruit',
+                taskKey: 'recruit:' + ctx.villageId,
+                villageId: ctx.villageId,
+                logicalResource: 'train-queue:' + ctx.villageId,
+                method: 'POST',
+                reason: 'manual-recruit'
+            }, function () { return request; })
+            : request);
+        if (!response.ok) {
+            const error = recruitMutationError('HTTP ' + response.status, {
+                status: Number(response.status) || 0,
+                url: response.url || url,
+                afterTransmission: true
+            });
+            const failure = window.PremiumFeaturesAsync?.classifyRequestFailure?.(error, { url }) || {};
+            if (failure.hardStop) window.triggerPremiumFeaturesHardStop?.(failure);
+            return {
+                status: [500, 502, 503].includes(Number(response.status))
+                    ? RECRUIT_MUTATION_OUTCOME.UNCERTAIN
+                    : RECRUIT_MUTATION_OUTCOME.FAILED,
+                error
+            };
+        }
+
+        let payload;
+        try {
+            payload = await response.json();
+        } catch (error) {
+            error.afterTransmission = true;
+            return { status: RECRUIT_MUTATION_OUTCOME.UNCERTAIN, error };
+        }
+        const explicitFailure = payload?.error || payload?.response?.error || payload?.success === false || payload?.response?.success === false;
+        if (explicitFailure) {
+            return { status: RECRUIT_MUTATION_OUTCOME.FAILED, error: recruitMutationError(String(explicitFailure)) };
+        }
+        if (!payload || typeof payload !== 'object' || !payload.response) {
+            return { status: RECRUIT_MUTATION_OUTCOME.UNCERTAIN, error: recruitMutationError('Unrecognized recruit response', { afterTransmission: true }) };
+        }
+        return { status: RECRUIT_MUTATION_OUTCOME.CONFIRMED, payload };
+    } catch (error) {
+        if (transmitted) error.afterTransmission = true;
+        return {
+            status: transmitted ? RECRUIT_MUTATION_OUTCOME.UNCERTAIN : RECRUIT_MUTATION_OUTCOME.FAILED,
+            error
+        };
+    } finally {
+        if (abortTimer != null) clearTimeout(abortTimer);
+    }
+}
+
+function calculateRecruitCost(villageId, submittedUnits) {
+    const unitData = bqGet('unit_managers_costs', villageId) || {};
+    const totalCost = { wood: 0, stone: 0, iron: 0 };
+    Object.entries(submittedUnits).forEach(([unit, qty]) => {
+        const costs = unitData[unit] || {};
+        totalCost.wood += (costs.wood || 0) * qty;
+        totalCost.stone += (costs.stone || 0) * qty;
+        totalCost.iron += (costs.iron || 0) * qty;
+    });
+    return totalCost;
+}
+
+function applyRecruitLocalSuccess(ctx, submittedUnits) {
+    const totalCost = calculateRecruitCost(ctx.villageId, submittedUnits);
+    ctx.deductResources(totalCost);
+    ctx.pendingDeduction.wood += totalCost.wood;
+    ctx.pendingDeduction.stone += totalCost.stone;
+    ctx.pendingDeduction.iron += totalCost.iron;
+    return totalCost;
+}
+
+async function refreshRecruitStateInPlace(ctx) {
+    let data;
+    try {
+        data = await Promise.resolve(ctx.refreshData());
+    } catch (_error) {
+        data = null;
+    }
+    if (data == null) return false;
+    ctx.pendingDeduction = { wood: 0, stone: 0, iron: 0 };
+    renderRecruitForm(ctx);
+    calculateMaxTroops(ctx);
+    return true;
+}
+
+async function reconcileRecruitMutation(ctx) {
+    const uncertain = ctx.recruitUncertain;
+    if (!uncertain) return 'NONE';
+    ctx.recruitMutationState = 'RECONCILING';
+    renderRecruitForm(ctx);
+    let data;
+    try {
+        data = await Promise.resolve(ctx.refreshData());
+    } catch (_error) {
+        data = null;
+    }
+    if (data == null) {
+        ctx.recruitMutationState = 'UNCERTAIN';
+        renderRecruitForm(ctx);
+        return 'UNKNOWN';
+    }
+    const after = readRecruitQueueSnapshot(ctx.villageId, uncertain.units);
+    const resolution = classifyRecruitReconciliation(uncertain.before, after, uncertain.units);
+    if (resolution === 'APPLIED') {
+        setRecruitUncertain(ctx, null);
+        ctx.recruitMutationState = null;
+    } else if (resolution === 'NOT_APPLIED') {
+        setRecruitUncertain(ctx, null);
+        ctx.recruitMutationState = null;
+    } else {
+        ctx.recruitMutationState = 'UNCERTAIN';
+    }
+    ctx.pendingDeduction = { wood: 0, stone: 0, iron: 0 };
+    renderRecruitForm(ctx);
+    return resolution;
 }
 
 /**
@@ -50,6 +240,8 @@ function createLiveRecruitContext(villageId) {
         calcDebounceTimer: null,
         resourceObserver: null,
         villageCheckInterval: null,
+        recruitUncertain: loadRecruitUncertain(villageId),
+        recruitMutationState: loadRecruitUncertain(villageId) ? 'UNCERTAIN' : null,
         getResources: () => {
             const snapshot = readVillageResourceSnapshot(document);
             if (!snapshot) return null;
@@ -169,6 +361,19 @@ function calculateMaxTroops(ctx, changedUnit = null) {
  */
 async function submitTroops(ctx) {
     const container = ctx.containerEl;
+    const trainButton = container.querySelector('[data-recruit-btn]');
+    const unresolved = ctx.recruitUncertain || loadRecruitUncertain(ctx.villageId);
+    if (unresolved) {
+        ctx.recruitUncertain = unresolved;
+        ctx.recruitMutationState = 'UNCERTAIN';
+        setButtonLoadingState(trainButton, true, t('button.recruit'));
+        try {
+            await reconcileRecruitMutation(ctx);
+        } finally {
+            setButtonLoadingState(trainButton, false, t('button.recruit'));
+        }
+        return;
+    }
 
     // Capture units to submit before any async work
     const submittedUnits = {};
@@ -179,62 +384,43 @@ async function submitTroops(ctx) {
 
     if (!Object.keys(submittedUnits).length) return;
 
-    const trainButton = container.querySelector('[data-recruit-btn]');
     setButtonLoadingState(trainButton, true, t('button.recruit'));
-    await new Promise(requestAnimationFrame);
-
-    const bodyData = new URLSearchParams();
-    Object.entries(submittedUnits).forEach(([unit, qty]) => {
-        bodyData.append(`units[${unit}]`, qty);
-    });
-    bodyData.append('h', game_data.csrf);
-
-    const resp = await fetch(`${ctx.linkBase}train&ajaxaction=train&mode=train`, {
-        headers: {
-            'accept': 'application/json, text/javascript, */*; q=0.01',
-            'priority': 'u=1, i',
-            'tribalwars-ajax': '1',
-            'x-requested-with': 'XMLHttpRequest',
-            'content-type': 'application/x-www-form-urlencoded; charset=UTF-8'
-        },
-        referrer: `${ctx.linkBase}train`,
-        body: bodyData.toString(),
-        method: 'POST',
-        credentials: 'include'
-    });
-
-    if (resp.ok) {
-        const unitData = bqGet('unit_managers_costs', ctx.villageId) || {};
-        const totalCost = { wood: 0, stone: 0, iron: 0 };
-        Object.entries(submittedUnits).forEach(([unit, qty]) => {
-            const costs = unitData[unit] || {};
-            totalCost.wood += (costs.wood || 0) * qty;
-            totalCost.stone += (costs.stone || 0) * qty;
-            totalCost.iron += (costs.iron || 0) * qty;
-        });
-
-        ctx.deductResources(totalCost);
-
-        // Accumulate spend so calculateMaxTroops stays correct even if the underlying resource
-        // source (live DOM tick, or the static snapshot) hasn't caught up yet.
-        ctx.pendingDeduction.wood += totalCost.wood;
-        ctx.pendingDeduction.stone += totalCost.stone;
-        ctx.pendingDeduction.iron += totalCost.iron;
-
-        calculateMaxTroops(ctx);
-        if (typeof showAutoHideBox === 'function') showAutoHideBox(t('recruit.troopsRecruited'), false);
-        // partialReload() re-renders the CURRENTLY LOADED page — only valid for the live village.
-        if (ctx.isLive) setTimeout(() => partialReload(), 1000);
-        // Keeps the overview_villages troops column in sync when trained from that page's overlay.
-        if (typeof refreshOverviewVillagesTroopsRow === 'function') refreshOverviewVillagesTroopsRow(ctx.villageId);
-    } else {
-        if (typeof showAutoHideBox === 'function') showAutoHideBox(t('recruit.errorRecruiting'), true);
+    try {
+        await new Promise(requestAnimationFrame);
+        const before = readRecruitQueueSnapshot(ctx.villageId, submittedUnits);
+        setRecruitUncertain(ctx, { units: submittedUnits, before, at: Date.now(), phase: 'transmitting' });
+        const outcome = await executeRecruitMutation(ctx, submittedUnits);
+        if (outcome.status === RECRUIT_MUTATION_OUTCOME.CONFIRMED) {
+            setRecruitUncertain(ctx, null);
+            applyRecruitLocalSuccess(ctx, submittedUnits);
+            await refreshRecruitStateInPlace(ctx);
+            if (typeof showAutoHideBox === 'function') showAutoHideBox(t('recruit.troopsRecruited'), false);
+            if (typeof refreshOverviewVillagesTroopsRow === 'function') refreshOverviewVillagesTroopsRow(ctx.villageId);
+        } else if (outcome.status === RECRUIT_MUTATION_OUTCOME.UNCERTAIN) {
+            setRecruitUncertain(ctx, { units: submittedUnits, before, at: Date.now() });
+            ctx.recruitMutationState = 'UNCERTAIN';
+            window.PremiumFeaturesDiagnostics?.record?.({
+                feature: 'recruit', taskKey: 'recruit:' + ctx.villageId, villageId: ctx.villageId,
+                logicalResource: 'train-queue:' + ctx.villageId, method: 'POST', status: 'UNCERTAIN'
+            });
+            const resolution = await reconcileRecruitMutation(ctx);
+            if (resolution === 'APPLIED') {
+                if (ctx.isLive) {
+                    ctx.deductResources(calculateRecruitCost(ctx.villageId, submittedUnits));
+                    calculateMaxTroops(ctx);
+                }
+                if (typeof showAutoHideBox === 'function') showAutoHideBox(t('recruit.troopsRecruited'), false);
+                if (typeof refreshOverviewVillagesTroopsRow === 'function') refreshOverviewVillagesTroopsRow(ctx.villageId);
+            } else if (resolution === 'NOT_APPLIED' && typeof showAutoHideBox === 'function') {
+                showAutoHideBox(t('recruit.errorRecruiting'), true);
+            }
+        } else {
+            setRecruitUncertain(ctx, null);
+            if (typeof showAutoHideBox === 'function') showAutoHideBox(t('recruit.errorRecruiting'), true);
+        }
+    } finally {
         setButtonLoadingState(trainButton, false, t('button.recruit'));
     }
-
-    // Re-render only after the refresh completes. Clear pending deduction first — server data
-    // is now fresh so the resource source (DOM tick or snapshot) will be correct on its own.
-    ctx.refreshData(() => { ctx.pendingDeduction = { wood: 0, stone: 0, iron: 0 }; renderRecruitForm(ctx); calculateMaxTroops(ctx); });
 }
 
 
@@ -297,6 +483,13 @@ function openDisperseBatchMenu(event, ctx) {
  */
 async function disperseTroops(ctx, batchSize = 1) {
     const container = ctx.containerEl;
+    const unresolved = ctx.recruitUncertain || loadRecruitUncertain(ctx.villageId);
+    if (unresolved) {
+        ctx.recruitUncertain = unresolved;
+        ctx.recruitMutationState = 'UNCERTAIN';
+        await reconcileRecruitMutation(ctx);
+        return;
+    }
     const unitData = bqGet('unit_managers_costs', ctx.villageId) || {};
     const remaining = {};
     container.querySelectorAll('[data-unit-input]').forEach(input => {
@@ -308,11 +501,13 @@ async function disperseTroops(ctx, batchSize = 1) {
 
     const disperseButton = container.querySelector('[data-disperse-btn]');
     setButtonLoadingState(disperseButton, true, t('button.disperse'));
-    await new Promise(requestAnimationFrame);
-
-    const totalCost = { wood: 0, stone: 0, iron: 0 };
+    try {
+        await new Promise(requestAnimationFrame);
+        const totalCost = { wood: 0, stone: 0, iron: 0 };
     let batchCount = 0;
     let failed = false;
+    let refreshedDuringReconciliation = false;
+    const expectedQueue = readRecruitQueueSnapshot(ctx.villageId, remaining);
 
     while (Object.keys(remaining).length > 0 && !failed) {
         const batch = {};
@@ -323,62 +518,63 @@ async function disperseTroops(ctx, batchSize = 1) {
             if (remaining[unit] <= 0) delete remaining[unit];
         }
 
-        const bodyData = new URLSearchParams();
-        Object.entries(batch).forEach(([unit, qty]) => bodyData.append(`units[${unit}]`, qty));
-        bodyData.append('h', game_data.csrf);
-
-        try {
-            const resp = await fetch(`${ctx.linkBase}train&ajaxaction=train&mode=train`, {
-                headers: {
-                    'accept': 'application/json, text/javascript, */*; q=0.01',
-                    'tribalwars-ajax': '1',
-                    'x-requested-with': 'XMLHttpRequest',
-                    'content-type': 'application/x-www-form-urlencoded; charset=UTF-8'
-                },
-                referrer: `${ctx.linkBase}train`,
-                body: bodyData.toString(),
-                method: 'POST',
-                credentials: 'include'
-            });
-
-            if (resp.ok) {
-                batchCount++;
-                Object.entries(batch).forEach(([unit, qty]) => {
-                    const costs = unitData[unit] || {};
-                    totalCost.wood += (costs.wood || 0) * qty;
-                    totalCost.stone += (costs.stone || 0) * qty;
-                    totalCost.iron += (costs.iron || 0) * qty;
-                });
-                if (Object.keys(remaining).length > 0) await new Promise(r => setTimeout(r, 150));
-            } else {
-                failed = true;
-            }
-        } catch (e) {
+        const before = Object.fromEntries(Object.keys(batch).map(unit => [unit, expectedQueue[unit] || 0]));
+        setRecruitUncertain(ctx, { units: batch, before, at: Date.now(), phase: 'transmitting', batch: batchCount + 1 });
+        const outcome = await executeRecruitMutation(ctx, batch);
+        let applied = outcome.status === RECRUIT_MUTATION_OUTCOME.CONFIRMED;
+        if (outcome.status === RECRUIT_MUTATION_OUTCOME.UNCERTAIN) {
+            setRecruitUncertain(ctx, { units: batch, before, at: Date.now(), batch: batchCount + 1 });
+            ctx.recruitMutationState = 'UNCERTAIN';
+            const resolution = await reconcileRecruitMutation(ctx);
+            refreshedDuringReconciliation = true;
+            applied = resolution === 'APPLIED';
+            // An ambiguous batch is a hard sequence boundary. Even after a read proves whether it
+            // applied, a later batch must be initiated by a new explicit action, never by this loop.
             failed = true;
+        }
+        if (outcome.status === RECRUIT_MUTATION_OUTCOME.FAILED) {
+            setRecruitUncertain(ctx, null);
+            failed = true;
+        }
+        if (outcome.status === RECRUIT_MUTATION_OUTCOME.CONFIRMED) {
+            setRecruitUncertain(ctx, null);
+            Object.entries(batch).forEach(([unit, qty]) => { expectedQueue[unit] = (expectedQueue[unit] || 0) + qty; });
+        }
+        if (applied) {
+            batchCount++;
+            Object.entries(batch).forEach(([unit, qty]) => {
+                const costs = unitData[unit] || {};
+                totalCost.wood += (costs.wood || 0) * qty;
+                totalCost.stone += (costs.stone || 0) * qty;
+                totalCost.iron += (costs.iron || 0) * qty;
+            });
+            if (!failed && Object.keys(remaining).length > 0) await new Promise(r => setTimeout(r, 150));
         }
     }
 
-    ctx.deductResources(totalCost);
-    ctx.pendingDeduction.wood += totalCost.wood;
-    ctx.pendingDeduction.stone += totalCost.stone;
-    ctx.pendingDeduction.iron += totalCost.iron;
+    if (refreshedDuringReconciliation) {
+        if (ctx.isLive) ctx.deductResources(totalCost);
+        ctx.pendingDeduction = { wood: 0, stone: 0, iron: 0 };
+    } else {
+        ctx.deductResources(totalCost);
+        ctx.pendingDeduction.wood += totalCost.wood;
+        ctx.pendingDeduction.stone += totalCost.stone;
+        ctx.pendingDeduction.iron += totalCost.iron;
+    }
 
     if (batchCount > 0 && typeof showAutoHideBox === 'function')
         showAutoHideBox(t(batchCount > 1 ? 'recruit.dispersedInBatches' : 'recruit.dispersedInBatch', { count: batchCount }), false);
     if (failed && typeof showAutoHideBox === 'function')
         showAutoHideBox(t('recruit.disperseStopped'), true);
 
-    if (!failed && batchCount > 0 && ctx.isLive) {
-        setTimeout(() => partialReload(), 1000);
-    } else {
-        setButtonLoadingState(disperseButton, false, t('button.disperse'));
-    }
-
     // Keeps the overview_villages troops column in sync when dispersed from that page's overlay.
     if (batchCount > 0 && typeof refreshOverviewVillagesTroopsRow === 'function') refreshOverviewVillagesTroopsRow(ctx.villageId);
 
     calculateMaxTroops(ctx);
-    ctx.refreshData(() => { ctx.pendingDeduction = { wood: 0, stone: 0, iron: 0 }; renderRecruitForm(ctx); calculateMaxTroops(ctx); });
+        if (!refreshedDuringReconciliation) await refreshRecruitStateInPlace(ctx);
+    } finally {
+        setButtonLoadingState(disperseButton, false, t('button.disperse'));
+    }
 }
 
 /**
@@ -579,6 +775,21 @@ function renderRecruitForm(ctx) {
     btnRow.appendChild(disperseButton);
 
     container.appendChild(table);
+    if (ctx.recruitMutationState) {
+        const status = document.createElement('div');
+        status.dataset.recruitMutationStatus = ctx.recruitMutationState;
+        status.style.cssText = 'margin-top:6px;font-size:11px;color:#7d510f;';
+        status.textContent = ctx.recruitMutationState === 'RECONCILING'
+            ? t('recruit.reconciling')
+            : t('recruit.uncertain');
+        container.appendChild(status);
+        if (ctx.recruitMutationState === 'UNCERTAIN') {
+            trainButton.textContent = t('recruit.reconcileAction');
+        } else if (ctx.recruitMutationState === 'RECONCILING') {
+            trainButton.disabled = true;
+            disperseButton.disabled = true;
+        }
+    }
     container.appendChild(btnRow);
 
     calculateMaxTroops(ctx);
@@ -606,7 +817,9 @@ function injectRecruitTroopsWidget(_column, skipFetch = false) {
         const loadingContainer = document.createElement('div');
         loadingContainer.id = 'recruit_troops_loading';
         loadingContainer.appendChild(createWidgetLoadingElement());
-        createWidgetElement({ identifier: t('button.recruit'), contents: loadingContainer, columnToUse, update: true, extra_name: 'troops', description: t('recruit.description'), widgetKey: 'recruit', loading: true });
+        if (!document.getElementById('show_recruit_troops')) {
+            createWidgetElement({ identifier: t('button.recruit'), contents: loadingContainer, columnToUse, update: true, extra_name: 'troops', description: t('recruit.description'), widgetKey: 'recruit', loading: true });
+        }
         fetchTrainInfo(() => injectRecruitTroopsWidget(_column, true));
         return;
     }

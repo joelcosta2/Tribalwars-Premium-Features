@@ -121,11 +121,35 @@ function buildVillageProfileNote(villageId) {
 }
 
 function injectVillageProfileNote() {
-    if (document.getElementById('village_profile_note')) return;
-
     const villageId = getVillageProfileNoteId();
     const rightColumn = getVillageProfileRightColumn();
     if (!villageId || !rightColumn) return;
 
-    rightColumn.insertBefore(buildVillageProfileNote(String(villageId)), rightColumn.firstChild);
+    const existing = document.getElementById('village_profile_note');
+    const hydration = window.PremiumFeaturesHydration?.villageProfileNotes;
+    if (existing) {
+        if (hydration?.status !== 'PENDING') {
+            renderVillageProfileNote(existing, String(villageId));
+            const editLink = existing.querySelector('#village_profile_note_edit');
+            if (editLink) {
+                editLink.removeAttribute('aria-disabled');
+                editLink.style.pointerEvents = '';
+            }
+        }
+        return;
+    }
+
+    const container = buildVillageProfileNote(String(villageId));
+    rightColumn.insertBefore(container, rightColumn.firstChild);
+    if (hydration?.status === 'PENDING') {
+        const editLink = container.querySelector('#village_profile_note_edit');
+        if (editLink) {
+            editLink.setAttribute('aria-disabled', 'true');
+            editLink.style.pointerEvents = 'none';
+        }
+        if (!hydration.villageProfileRefreshRegistered) {
+            hydration.villageProfileRefreshRegistered = true;
+            hydration.promise.then(injectVillageProfileNote);
+        }
+    }
 }

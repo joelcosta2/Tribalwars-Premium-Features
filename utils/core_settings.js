@@ -299,6 +299,7 @@ function injectScriptSettingsButtom(maincell) {
         title: t('settings.title'),
         onClick: () => {
             const popup = document.getElementById('settings_popup');
+            refreshHardStopRecoveryControl();
             if (typeof togglePopup === 'function') {
                 togglePopup(popup);
             }
@@ -494,7 +495,6 @@ function createTabContent(groupName, index) {
 
     // Filter and build rows
     availableSettings.forEach(setting => {
-        if (!window.PremiumFeaturesPrivateAutomations && setting.name === 'show__auto_paladin_train') return;
         if (!currentGroup.includes(setting.name)) return;
 
         // 1. Create Main Setting Row
@@ -916,8 +916,41 @@ function createSaveButton() {
     importButton.onclick = () => importSettings();
 
     saveButtonDiv.append(saveButton, exportButton, importButton);
+    const recovery = document.createElement('div');
+    recovery.id = 'twpf_hard_stop_recovery';
+    recovery.style.display = 'none';
+    const status = document.createElement('span');
+    status.id = 'twpf_hard_stop_status';
+    const resume = Object.assign(document.createElement('input'), {
+        type: 'button',
+        value: t('settings.resumeAutomations'),
+        className: 'btn'
+    });
+    resume.id = 'twpf_hard_stop_resume';
+    resume.onclick = function () {
+        window.PremiumFeaturesBotProtection?.resumeAfterHardStop?.();
+        refreshHardStopRecoveryControl();
+    };
+    recovery.append(status, resume);
+    saveButtonDiv.appendChild(recovery);
+    refreshHardStopRecoveryControl(recovery);
     return saveButtonDiv;
 }
+
+function refreshHardStopRecoveryControl(element) {
+    const recovery = element || document.getElementById('twpf_hard_stop_recovery');
+    if (!recovery) return;
+    const hardStopped = !!window.PremiumFeaturesBackgroundScheduler?.stats?.().hardStopped;
+    recovery.style.display = hardStopped ? '' : 'none';
+    if (!hardStopped) return;
+    const canResume = !!window.PremiumFeaturesBotProtection?.canResumeAfterHardStop?.();
+    const status = recovery.querySelector?.('#twpf_hard_stop_status') || document.getElementById('twpf_hard_stop_status');
+    const button = recovery.querySelector?.('#twpf_hard_stop_resume') || document.getElementById('twpf_hard_stop_resume');
+    if (status) status.textContent = t('settings.hardStopStatus');
+    if (button) button.style.display = canResume ? '' : 'none';
+}
+
+window.refreshHardStopRecoveryControl = refreshHardStopRecoveryControl;
 
 /**
  * Groups setting names into categories for tabbed navigation, derived from
@@ -935,4 +968,3 @@ function getSettingsGroups() {
 
     return groups;
 }
-

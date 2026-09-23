@@ -454,4 +454,4 @@ function startMapGroupContextWatcher() {
     };
 }
 
-if (typeof TWMap !== 'undefined' && !isPremiumAccount()) startMapGroupContextWatcher();
+if (typeof TWMap !== 'undefined' && getSetting('show__map_group_quicklinks') !== false && isMapContextButtonEnabled('mapGroup')) startMapGroupContextWatcher();

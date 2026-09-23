@@ -210,6 +210,8 @@ function createOverlayRecruitContext(villageId, containerEl) {
         isLive: false,
         pendingDeduction: { wood: 0, stone: 0, iron: 0 },
         calcDebounceTimer: null,
+        recruitUncertain: loadRecruitUncertain(villageId),
+        recruitMutationState: loadRecruitUncertain(villageId) ? 'UNCERTAIN' : null,
         getResources: () => {
             const snap = villageResourceSnapshots[villageId];
             if (!snap) return null;
@@ -518,35 +520,40 @@ function openVillageRecruitOverlay(villageId) {
  * @param {HTMLElement} content
  * @param {Function} [isRenderCurrent] - Returns whether the response may update the overlay.
  */
+function renderVillageBuildQueueOverlayFromState(villageId, content, isRenderCurrent, doc) {
+    if (typeof isRenderCurrent === 'function' && !isRenderCurrent(villageId)) return;
+    const catalog = window.PremiumFeaturesBuildState?.get?.(villageId)?.official?.catalog ||
+        (typeof createBuildQueueCatalog === 'function' ? createBuildQueueCatalog(doc) : getAllBuildingsImages(doc));
+    const availableBuildingsImgs = catalog.availableBuildingsImgs || [];
+    const availableBuildingLevels = catalog.availableBuildingLevels || [];
+    const allBuildingsImgs = catalog.allBuildingsImgs || [];
+    const allAvailableBuildingLevels = catalog.allAvailableBuildingLevels || [];
+    const queueBuildIdsActive = bqGet('building_queue_active', villageId) || [];
+    const resources = window.PremiumFeaturesBuildState?.get?.(villageId)?.resources || readResourcesFromDoc(doc);
+
+    refreshOverviewVillagesBuildQueueRow(villageId, doc, allBuildingsImgs);
+    const onAction = function () {
+        renderVillageBuildQueueOverlayFromState(villageId, content, isRenderCurrent, doc);
+    };
+    const buildQueueElment = document.createElement('td');
+    injectAtiveQueueList(queueBuildIdsActive, buildQueueElment, villageId, doc, onAction);
+    injectFakeQueueList(queueBuildIdsActive, buildQueueElment, allBuildingsImgs, villageId, doc, resources, onAction);
+    const buildDiv = settings_cookies.general['show__building_queue_all']
+        ? buildBuildQueueContent(allBuildingsImgs, availableBuildingsImgs, allAvailableBuildingLevels, buildQueueElment, villageId, doc, resources, onAction)
+        : buildBuildQueueContent(availableBuildingsImgs, availableBuildingsImgs, availableBuildingLevels, buildQueueElment, villageId, doc, resources, onAction);
+    buildDiv.dataset.twpfFreshness = Date.now() - Number(window.PremiumFeaturesBuildState?.get?.(villageId)?.official?.fetchedAt || 0) <= 15000
+        ? 'fresh'
+        : 'stale';
+    content.replaceChildren(buildDiv);
+}
+
 function renderVillageBuildQueueOverlay(villageId, content, isRenderCurrent) {
     fetchVillageMainPage(villageId)
         .then(({ doc }) => {
             if (typeof isRenderCurrent === 'function' && !isRenderCurrent(villageId)) return;
-            parseAndStoreQueueState(doc, villageId);
-            const { availableBuildingsImgs, availableBuildingLevels, allBuildingsImgs, allAvailableBuildingLevels } = getAllBuildingsImages(doc);
-            const queueBuildIdsActive = bqGet('building_queue_active', villageId) || [];
-            const resources = readResourcesFromDoc(doc);
-
-            refreshOverviewVillagesBuildQueueRow(villageId, doc, allBuildingsImgs);
-
-            // Re-fetch and re-render after any action so the overlay reflects fresh server state
-            // (cancel is awaited directly; add/remove queue actions settle immediately or async
-            // via a fire-and-forget AJAX call, hence the extra delayed re-render below).
-            const onAction = () => {
-                renderVillageBuildQueueOverlay(villageId, content, isRenderCurrent);
-                setTimeout(() => renderVillageBuildQueueOverlay(villageId, content, isRenderCurrent), 1200);
-            };
-
-            const buildQueueElment = document.createElement('td');
-            injectAtiveQueueList(queueBuildIdsActive, buildQueueElment, villageId, doc, onAction);
-            injectFakeQueueList(queueBuildIdsActive, buildQueueElment, allBuildingsImgs, villageId, doc, resources, onAction);
-
-            const buildDiv = settings_cookies.general['show__building_queue_all']
-                ? buildBuildQueueContent(allBuildingsImgs, availableBuildingsImgs, allAvailableBuildingLevels, buildQueueElment, villageId, doc, resources, onAction)
-                : buildBuildQueueContent(availableBuildingsImgs, availableBuildingsImgs, availableBuildingLevels, buildQueueElment, villageId, doc, resources, onAction);
-
-            content.innerHTML = '';
-            content.appendChild(buildDiv);
+            if (typeof observeBuildQueueDocument === 'function') observeBuildQueueDocument(doc, villageId, 'manual-overlay');
+            else parseAndStoreQueueState(doc, villageId);
+            renderVillageBuildQueueOverlayFromState(villageId, content, isRenderCurrent, doc);
         })
         .catch(() => {
             if (typeof isRenderCurrent === 'function' && !isRenderCurrent(villageId)) return;

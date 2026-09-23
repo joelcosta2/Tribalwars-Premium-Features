@@ -16,14 +16,12 @@
         return document.querySelector('.maincell')?.children[0] || null;
     }
 
-    function isOutsideViewport(element) {
+    function isOutsideHorizontalViewport(element) {
         const rect = element.getBoundingClientRect();
         const viewportWidth = window.innerWidth;
-        const viewportHeight = window.innerHeight;
 
         return rect.width <= 0 || rect.height <= 0
-            || rect.right <= 0 || rect.left >= viewportWidth
-            || rect.bottom <= 0 || rect.top >= viewportHeight;
+            || rect.right <= 0 || rect.left >= viewportWidth;
     }
 
     function isMainLayoutWithoutSidebarSpace() {
@@ -38,7 +36,7 @@
         if (!target.classList.contains('questlog')) return;
 
         const shouldPinLeft = isMainLayoutWithoutSidebarSpace()
-            || isOutsideViewport(target);
+            || isOutsideHorizontalViewport(target);
         target.classList.toggle('questlog-pin-left', shouldPinLeft);
     }
 
@@ -79,13 +77,18 @@
             const target = getSidebarTarget();
             if (target) {
                 updateQuestLogPosition(target);
-                injectAll();
+                // Moving the existing quest-log node between its normal parent and the fixed portal
+                // keeps every icon (including Settings) at a stable horizontal position. Recreating
+                // all icons on every scroll caused needless DOM churn and transient state loss.
+                getRenderTarget(target);
             }
         });
     }
 
+    // A vertical scroll cannot make more horizontal room for the sidebar. Repositioning on
+    // scroll could move the Settings control between its normal parent and the fixed portal,
+    // and also used to remount icons. A real viewport/layout resize remains the relevant signal.
     window.addEventListener('resize', schedulePositionUpdate);
-    window.addEventListener('scroll', schedulePositionUpdate, true);
 
     function createIconElement(config) {
         if (typeof config.createIcon === 'function') {

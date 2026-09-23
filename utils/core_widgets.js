@@ -51,8 +51,9 @@ function isEditableKeyboardTarget(target) {
  * Only active when the navigation arrows setting is enabled and no editable field has focus.
  */
 function defineKeyboardShortcuts() {
+    $(document).off('keydown.premium_features_navigation');
     if (settings_cookies.general['show__navigation_arrows']) {
-        $(document).keydown(function (evt) {
+        $(document).on('keydown.premium_features_navigation', function (evt) {
             if (textSelected || isEditableKeyboardTarget(evt.target)) return;
 
             if (evt.keyCode == 65) {
@@ -85,6 +86,40 @@ function setWidgetLoading(container, isLoading, minHeight = '44px') {
     if (isLoading) container.replaceChildren(createWidgetLoadingElement(minHeight));
     else container.replaceChildren();
     container.setAttribute('aria-busy', String(isLoading));
+}
+
+/**
+ * Updates a widget without replacing its outer node. The stable root prevents an asynchronous
+ * refresh from creating a visible remove/insert gap and keeps the widget's layout position and
+ * collapsed state intact.
+ */
+function patchExistingWidget(currentElement, replacement, contents, elemName, title, description, loading) {
+    if (!currentElement) return null;
+    const currentContent = document.getElementById('widget_content_' + elemName);
+    const currentHeader = Array.from(currentElement.children || []).find(function (child) {
+        return String(child.tagName || '').toLowerCase() === 'h4';
+    });
+    if (!currentContent || !currentHeader) {
+        currentElement.replaceWith(replacement);
+        return replacement;
+    }
+
+    currentElement.className = replacement.className;
+    currentElement.setAttribute('data-title', description || title);
+    const headerButton = document.getElementById('mini_' + elemName);
+    const titleNodes = Array.from(currentHeader.childNodes || []).filter(function (node) {
+        return node !== headerButton && node.nodeType === 3;
+    });
+    if (titleNodes.length) {
+        titleNodes[0].textContent = title;
+        titleNodes.slice(1).forEach(function (node) { currentHeader.removeChild(node); });
+    } else {
+        currentHeader.insertBefore(document.createTextNode(title), headerButton || currentHeader.firstChild || null);
+    }
+    currentHeader.setAttribute('data-title', description || title);
+    currentContent.replaceChildren(contents);
+    currentContent.setAttribute('aria-busy', String(loading));
+    return currentElement;
 }
 
 /**
@@ -149,12 +184,21 @@ function createWidgetElement({ identifier, contents, columnToUse, update, extra_
         contentDiv.appendChild(contents);
         containerDiv.appendChild(header);
         containerDiv.appendChild(contentDiv);
-        //if update, remove the current element
-        if (update) {
-            var currentElement = document.getElementById('show_' + elemName);
-            if (currentElement) {
-                columnElement.removeChild(currentElement);
-            }
+        // A partial reload may reconcile the same logical widget again. Patch the existing root
+        // in place so no duplicate UI survives and async refreshes never expose a blank interval.
+        var currentElement = document.getElementById('show_' + elemName);
+        if (currentElement) {
+            const patched = patchExistingWidget(
+                currentElement,
+                containerDiv,
+                contents,
+                elemName,
+                title,
+                description,
+                loading
+            );
+            if (patched.parentNode !== columnElement) columnElement.appendChild(patched);
+            return patched;
         }
 
         // Insert at the saved position if valid, otherwise append to the column
@@ -166,8 +210,10 @@ function createWidgetElement({ identifier, contents, columnToUse, update, extra_
         } else {
             columnElement.appendChild(containerDiv);
         }
+        return containerDiv;
     }
 
+    return null;
 }
 
 /**
@@ -284,7 +330,7 @@ function restoreNativeWidgetPosition(item) {
  */
 function injectScriptColumn() {
     var overviewtableElement = document.getElementById('overviewtable');
-    if (overviewtableElement) {
+    if (overviewtableElement && !document.getElementById('script_column')) {
         var trElement = overviewtableElement.getElementsByTagName('tr')[0];
         var scriptColumn = document.createElement('td');
         scriptColumn.setAttribute('valign', 'top');

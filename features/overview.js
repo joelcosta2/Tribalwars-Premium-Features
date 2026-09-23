@@ -277,7 +277,10 @@ function getMarketInfo() {
  * @returns {string}
  */
 function getPlaceInfo() {
-    const endTime_scavenging = localStorage.getItem('endTime_scavenging-auto');
+    const villageId = String(game_data?.village?.id || '');
+    const endTime_scavenging = villageId
+        ? localStorage.getItem('endTime_scavenging-auto:' + villageId)
+        : null;
     if (endTime_scavenging) {
         // Compute remaining time until the scavenging mission returns
         var endTime = Math.floor(endTime_scavenging / 1000);
@@ -648,14 +651,16 @@ function fetchTrainInfo(callback, villageId = game_data?.village?.id || 'unknown
         trainInfoFetchPromises[villageId].then(function (data) {
             if (typeof callback === 'function') callback(data);
         });
-        return;
+        return trainInfoFetchPromises[villageId];
     }
 
     const promise = new Promise(function (resolve) {
         $.ajax({
             url: linkBase + 'train',
             method: "GET",
+            timeout: 15000,
             success: function (data) {
+                try {
                 if (updateTiles) {
                     let barrracksTimes = [],
                         stableTimes = [],
@@ -698,6 +703,10 @@ function fetchTrainInfo(callback, villageId = game_data?.village?.id || 'unknown
                 storeTrainQueueData(data, villageId, updateTiles);
                 storeVillageResourceSnapshot(data, villageId);
                 resolve(data);
+                } catch (error) {
+                    console.error('[TW] Could not parse train state', error);
+                    resolve(null);
+                }
             },
             error: function () {
                 // Resolve (not reject) so the in-flight entry clears and future fetches aren't blocked
@@ -710,6 +719,7 @@ function fetchTrainInfo(callback, villageId = game_data?.village?.id || 'unknown
     promise.then(function (data) {
         if (typeof callback === 'function') callback(data);
     });
+    return promise;
 }
 
 /**
@@ -948,4 +958,3 @@ function addToVisualLevelLabel(buildingName, level, fakeQueue) {
         }
     }
 }
-

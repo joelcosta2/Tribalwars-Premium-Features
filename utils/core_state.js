@@ -1,10 +1,6 @@
 // Global settings/state: settings_cookies schema, getters/setters, and localStorage bootstrap.
 // Depends on utils/core_storage.js (safeLocalStorageSet).
 
-function isPremiumAccount() {
-    return typeof game_data !== 'undefined' && Boolean(game_data?.features?.Premium?.active);
-}
-
 //GLOBAL VARIABLES
 var RIGHT_COLUMN = "rightcolumn";
 var CENTER_COLUMN = "leftcolumn";
@@ -97,7 +93,7 @@ var default_settings_cookies = {
         show__auto_build_instant_free: false,
         show__auto_paladin_train: {
             enabled: false,
-            maxLevel: 0,
+            maxLevel: 30,
         },
         show__player_profile_stats: true,
     }
@@ -154,13 +150,14 @@ var currentVillageIndex;
  * Initialises required localStorage keys with defaults and migrates saved settings
  * to include any new keys added since the user last saved.
  */
-function prepareLocalStorageItems() {
+function prepareLocalStorageItems(options = {}) {
     if (unsafeWindow.lang) {
         safeLocalStorageSet('tw_lang', JSON.stringify(unsafeWindow.lang));
     }
 
-    bqSet('waiting_for_queue', undefined, bqGet('waiting_for_queue') ?? {});
-    bqSet('building_queue', undefined, bqGet('building_queue') ?? []);
+    // The per-village IndexedDB mirror must be hydrated before any bqGet/bqSet access. Settings
+    // and other synchronous defaults can safely be prepared earlier for a fast UI shell.
+    if (!options.skipBuildQueue) prepareBuildQueueStorageDefaults();
     safeLocalStorageSet('villages_info', localStorage.getItem('villages_info') ?? '[]');
     safeLocalStorageSet('full_storage_times', localStorage.getItem('full_storage_times') ?? '[]');
     safeLocalStorageSet('mapConfig', localStorage.getItem('mapConfig') ?? '{}');
@@ -356,6 +353,24 @@ function prepareLocalStorageItems() {
         });
     }
 
+    const paladinSetting = settings_cookies.general.show__auto_paladin_train;
+    if (!paladinSetting || typeof paladinSetting !== 'object') {
+        settings_cookies.general.show__auto_paladin_train = {
+            enabled: paladinSetting === true,
+            maxLevel: 30
+        };
+        settingsMigrated = true;
+    } else {
+        if (typeof paladinSetting.enabled !== 'boolean') {
+            paladinSetting.enabled = false;
+            settingsMigrated = true;
+        }
+        if (!Number.isInteger(Number(paladinSetting.maxLevel)) || Number(paladinSetting.maxLevel) <= 0) {
+            paladinSetting.maxLevel = 30;
+            settingsMigrated = true;
+        }
+    }
+
     // Remove legacy Resource Dashboard data from older saved settings/storage.
     const legacyWidgetName = ['resource', 'dashboard'].join('_');
     const legacySettingKey = ['show', 'resource', 'dashboard'].join('__');
@@ -394,6 +409,11 @@ function prepareLocalStorageItems() {
         // Store on Tampermonkey storage
         GM_setValue("current_world", game_data?.world);
     }
+}
+
+function prepareBuildQueueStorageDefaults() {
+    bqSet('waiting_for_queue', undefined, bqGet('waiting_for_queue') ?? {});
+    bqSet('building_queue', undefined, bqGet('building_queue') ?? []);
 }
 
 /**

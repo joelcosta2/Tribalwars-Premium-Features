@@ -9,10 +9,10 @@ function storeUnitsInfo() {
     const hasCarry = localStorage.getItem('units_carry');
 
     if (hasSpeeds && hasSpeeds !== '{}' && hasCarry && hasCarry !== '{}') {
-        return; // already stored, skip fetch
+        return Promise.resolve(); // already stored, skip fetch
     }
 
-    fetch('/interface.php?func=get_unit_info')
+    return fetch('/interface.php?func=get_unit_info')
         .then(res => res.text())
         .then(xmlText => {
             const xml = new DOMParser().parseFromString(xmlText, 'text/xml');

@@ -5,6 +5,8 @@
 (function () {
     const REPORTS_FETCH_TTL_MS = 15 * 60 * 1000;
     const REPORTS_PRUNE_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+    const REPORT_DETAIL_NEGATIVE_TTL_MS = 60 * 1000;
+    const REPORTS_BACKOFF_MS = [30000, 60000, 120000, 300000, 600000];
     const REQUEST_DELAY_MS = 200;
     const REPORTS_GROUP_ID = 0;
     const DEFAULT_HIDDEN_RESOURCE_BUILDING_LEVEL = 0;
@@ -18,6 +20,7 @@
     let reportsCache = null;
     let syncPromise = null;
     let fullReportPromises = new Map();
+    const fullReportNegativeCache = new Map();
 
     function delay() {
         return new Promise(resolve => setTimeout(resolve, REQUEST_DELAY_MS));
@@ -78,18 +81,49 @@
     }
 
     async function sync(options = {}) {
-        if (syncPromise) return syncPromise;
+        const retryAt = Number(localStorage.getItem('reports_soft_pause_until')) || 0;
+        if (!options.force && retryAt > Date.now()) {
+            window.PremiumFeaturesDiagnostics?.record?.({
+                feature: 'reports', taskKey: 'reports-sync', logicalResource: 'reports-list',
+                status: 'SOFT_PAUSE', reason: 'reports-backoff'
+            });
+            return { changed: false, newReports: [], groupId: null, retryAt };
+        }
+        const scheduler = window.PremiumFeaturesBackgroundScheduler;
+        if (!options.scheduled && scheduler?.enqueue) {
+            const scheduled = await scheduler.enqueue({
+                key: 'reports:sync',
+                priority: scheduler.PRIORITY?.REFRESH || 4,
+                dueMode: scheduler.DUE_MODE?.EARLIEST || 'EARLIEST',
+                leaseKey: 'reports-sync',
+                rerunWhileActive: true,
+                run: function () { return sync(Object.assign({}, options, { scheduled: true })); }
+            });
+            return scheduled?.value || { changed: false, newReports: [], groupId: null };
+        }
+        if (syncPromise) {
+            window.PremiumFeaturesDiagnostics?.record?.({
+                feature: 'reports', taskKey: 'reports-sync', logicalResource: 'reports-list',
+                status: 'COALESCED', reason: 'sync-in-flight'
+            });
+            return syncPromise;
+        }
         syncPromise = (async () => {
             const storedReports = await hydrate();
             const lastFetch = parseInt(localStorage.getItem('reports_last_fetch') || '0', 10);
-            if (!options.force && storedReports.length > 0 && Date.now() - lastFetch < REPORTS_FETCH_TTL_MS) {
+            if (!options.force && lastFetch > 0 && Date.now() - lastFetch < REPORTS_FETCH_TTL_MS) {
+                window.PremiumFeaturesDiagnostics?.record?.({
+                    feature: 'reports', taskKey: 'reports-sync', logicalResource: 'reports-list',
+                    status: 'CACHE_HIT', reason: 'reports-ttl'
+                });
                 return { changed: false, newReports: [], groupId: null };
             }
 
             const firstPageData = await fetchReportsPage(0);
             if (!firstPageData) return { changed: false, newReports: [], groupId: null };
             const knownIds = new Set(storedReports.map(report => report.id));
-            const newReports = await fetchAllReports(knownIds, firstPageData);
+            const fetchedReports = await fetchAllReports(knownIds, firstPageData);
+            const newReports = fetchedReports.reports;
 
             const reportsMap = new Map(storedReports.map(report => [report.coords, report]));
             const changedCoords = new Set();
@@ -118,7 +152,7 @@
                 ...[...changedCoords].filter(coords => reportsMap.has(coords)).map(coords => reportSet(coords, reportsMap.get(coords))),
                 ...removedCoords.map(coords => reportRemove(coords))
             ]);
-            localStorage.setItem('reports_last_fetch', String(Date.now()));
+            if (fetchedReports.complete) localStorage.setItem('reports_last_fetch', String(Date.now()));
             if (typeof reconcileQuickFarmAttacks === 'function' && typeof getQuickFarmAttacksBySourceVillage === 'function') {
                 const sourceVillageId = game_data?.village?.id;
                 if (sourceVillageId != null) {
@@ -143,32 +177,62 @@
 
     async function fetchAllReports(knownIds = new Set(), firstPageData = null) {
         const firstPage = firstPageData || await fetchReportsPage(0);
-        if (!firstPage) return [];
+        if (!firstPage) return { reports: [], complete: false };
         const parser = new DOMParser();
         const doc = parser.parseFromString(firstPage, 'text/html');
         const totalPages = doc.querySelectorAll('.paged-nav-item').length + 1;
         let allReports = extractReports(doc);
-        if (knownIds.size > 0 && allReports.some(report => knownIds.has(report.id))) return allReports;
+        if (knownIds.size > 0 && allReports.some(report => knownIds.has(report.id))) {
+            return { reports: allReports, complete: true };
+        }
+        let complete = true;
         for (let page = 1; page < totalPages; page++) {
             const pageData = await fetchReportsPage(page * 12);
-            if (pageData) {
-                const pageReports = extractReports(parser.parseFromString(pageData, 'text/html'));
-                allReports.push(...pageReports);
-                if (knownIds.size > 0 && pageReports.some(report => knownIds.has(report.id))) break;
+            if (!pageData) {
+                complete = false;
+                break; // the task is now soft-paused; never walk into immediate retries
             }
+            const pageReports = extractReports(parser.parseFromString(pageData, 'text/html'));
+            allReports.push(...pageReports);
+            if (knownIds.size > 0 && pageReports.some(report => knownIds.has(report.id))) break;
             await delay();
         }
-        return allReports;
+        return { reports: allReports, complete };
     }
 
     async function fetchReportsPage(from) {
         const url = `${game_data.link_base_pure}report&mode=attack&group_id=${REPORTS_GROUP_ID}&from=${from}`;
         try {
-            const response = await fetch(url, { cache: 'no-store' });
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            return await response.text();
+            const run = () => fetch(url, { cache: 'no-store' });
+            const response = await (window.PremiumFeaturesDiagnostics?.request
+                ? window.PremiumFeaturesDiagnostics.request({
+                    feature: 'reports', taskKey: 'reports-sync', logicalResource: 'reports-page:' + from,
+                    method: 'GET', reason: 'reports-sync'
+                }, run)
+                : run());
+            if (!response.ok) {
+                const responseError = new Error(`HTTP error! status: ${response.status}`);
+                responseError.status = response.status;
+                responseError.url = response.url || url;
+                throw responseError;
+            }
+            const text = await response.text();
+            localStorage.removeItem('reports_soft_pause_until');
+            localStorage.removeItem('reports_failure_count');
+            return text;
         } catch (error) {
             console.error(`[Report Manager] Failed to fetch reports from ${url}:`, error);
+            const failure = window.PremiumFeaturesAsync?.classifyRequestFailure?.(error, { url }) || {};
+            if (failure.transient) {
+                const count = (Number(localStorage.getItem('reports_failure_count')) || 0) + 1;
+                const delayMs = REPORTS_BACKOFF_MS[Math.min(count - 1, REPORTS_BACKOFF_MS.length - 1)];
+                localStorage.setItem('reports_failure_count', String(count));
+                localStorage.setItem('reports_soft_pause_until', String(Date.now() + delayMs));
+                window.PremiumFeaturesDiagnostics?.record?.({
+                    feature: 'reports', taskKey: 'reports-sync', logicalResource: 'reports-list',
+                    status: 'SOFT_PAUSE', reason: 'reports-fetch-failed'
+                });
+            }
             return null;
         }
     }
@@ -376,24 +440,62 @@
 
     // Bounded to just the reports this sync cycle found new/changed, not the whole cache.
     async function hydrateReportsForHeatmap(reports) {
-        const HYDRATE_BATCH_SIZE = 3;
         const pending = reports.filter(report => report?.coords && !isOwnVillage(report.coords) && !hasFullReportData(report));
-        for (let index = 0; index < pending.length; index += HYDRATE_BATCH_SIZE) {
-            await Promise.all(pending.slice(index, index + HYDRATE_BATCH_SIZE).map(hydrateFullReport));
+        for (let index = 0; index < pending.length; index++) {
+            await hydrateFullReport(pending[index], { insideScheduler: true });
+            if (index + 1 < pending.length) await delay();
         }
     }
 
-    async function hydrateFullReport(report) {
-        if (!report || hasFullReportData(report)) return report;
+    async function hydrateFullReport(report, options = {}) {
+        if (!report) return report;
+        if (hasFullReportData(report)) {
+            window.PremiumFeaturesDiagnostics?.record?.({
+                feature: 'reports', logicalResource: 'report:' + report.id,
+                status: 'CACHE_HIT', reason: 'immutable-report-detail'
+            });
+            return report;
+        }
+        const reportKey = String(report.id || '');
+        if (Number(fullReportNegativeCache.get(reportKey) || 0) > Date.now()) {
+            window.PremiumFeaturesDiagnostics?.record?.({
+                feature: 'reports', logicalResource: 'report:' + reportKey,
+                status: 'SKIPPED', reason: 'negative-cache'
+            });
+            return null;
+        }
         console.log('[Report] Fetching full report:', report.id);
-        if (fullReportPromises.has(report.coords)) return fullReportPromises.get(report.coords);
+        if (fullReportPromises.has(reportKey)) {
+            window.PremiumFeaturesDiagnostics?.record?.({
+                feature: 'reports', logicalResource: 'report:' + reportKey,
+                status: 'COALESCED', reason: 'detail-in-flight'
+            });
+            return fullReportPromises.get(reportKey);
+        }
         const promise = (async () => {
             try {
-                const data = await fetchWithRetry429({
-                    url: '/game.php?screen=report&view=' + encodeURIComponent(report.id),
-                    type: 'GET',
-                    cache: false
-                });
+                const url = '/game.php?screen=report&view=' + encodeURIComponent(report.id);
+                const request = () => fetchWithRetry429({ url, type: 'GET', cache: false });
+                const load = () => window.PremiumFeaturesDiagnostics?.request
+                    ? window.PremiumFeaturesDiagnostics.request({
+                        feature: 'reports', logicalResource: 'report:' + reportKey,
+                        method: 'GET', reason: 'report-detail'
+                    }, request)
+                    : request();
+                let data;
+                const scheduler = window.PremiumFeaturesBackgroundScheduler;
+                if (!options.insideScheduler && scheduler?.enqueue) {
+                    const scheduled = await scheduler.enqueue({
+                        key: 'manual:report:' + reportKey,
+                        priority: scheduler.PRIORITY?.MANUAL || 1,
+                        dueMode: scheduler.DUE_MODE?.EARLIEST || 'EARLIEST',
+                        run: load
+                    });
+                    if (scheduled?.status !== 'COMPLETED') throw scheduled?.error || new Error('Report detail task did not complete');
+                    data = scheduled.value;
+                } else {
+                    data = await load();
+                }
                 const tempDoc = new DOMParser().parseFromString(data, 'text/html');
                 const attackFacts = extractReportAttackFacts(tempDoc);
                 report.loot = null;
@@ -424,6 +526,7 @@
                 }
                 report.wallLevel = extractSpyWallLevel(tempDoc);
                 report.fetchedFull = !report.hasSpy || !!report.spyBuildingLevels;
+                report.fetchedFullAt = Date.now();
                 console.log('[Report] Full report extracted:', {
                     id: report.id,
                     hasSpy: report.hasSpy,
@@ -440,12 +543,13 @@
                 return report;
             } catch (error) {
                 console.error('[Report] Failed to fetch report:', error);
+                fullReportNegativeCache.set(reportKey, Date.now() + REPORT_DETAIL_NEGATIVE_TTL_MS);
                 return null;
             } finally {
-                fullReportPromises.delete(report.coords);
+                fullReportPromises.delete(reportKey);
             }
         })();
-        fullReportPromises.set(report.coords, promise);
+        fullReportPromises.set(reportKey, promise);
         return promise;
     }
 

@@ -839,7 +839,7 @@ function openMapGroupsForm(groupId) {
     });
 }
 
-if (typeof TWMap !== 'undefined' && !isPremiumAccount()) {
+if (typeof TWMap !== 'undefined' && getSetting('show__map_groups_overlay') !== false) {
     installMapHighlighterHook();
 
     mapReady().then(() => {
