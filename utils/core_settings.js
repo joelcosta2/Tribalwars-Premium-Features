@@ -9,29 +9,7 @@ var availableSettings = [
 
     // Overview Villages Premium Features
     { "name": "show__overview_villages_queue", "label": t('settings.overviewVillagesQueueLabel'), "description": t('settings.overviewVillagesQueueDesc'), "group": t('settings.groupOverviewVillages') },
-    {
-        "name": "show__overview_villages_troops",
-        "label": t('settings.overviewVillagesTroopsLabel'),
-        "description": t('settings.overviewVillagesTroopsDesc'),
-        "group": t('settings.groupOverviewVillages'),
-        "extraSettings": {
-            "auto": {
-                "label": t('settings.overviewVillagesTroopsAutoLabel'),
-                "desc": t('settings.overviewVillagesTroopsAutoDesc'),
-                "type": "checkbox",
-                "default": false
-            },
-            "mode": {
-                "label": t('settings.overviewVillagesTroopsAutoModeLabel'),
-                "type": "select",
-                "default": "full",
-                "options": [
-                    { "value": "full", "label": t('settings.overviewVillagesTroopsAutoModeFull') },
-                    { "value": "place", "label": t('settings.overviewVillagesTroopsAutoModePlace') }
-                ]
-            }
-        }
-    },
+    { "name": "show__overview_villages_troops", "label": t('settings.overviewVillagesTroopsFetchModeLabel'), "description": t('settings.overviewVillagesTroopsFetchModeDesc'), "group": t('settings.groupOverviewVillages') },
     {
         "name": "show__overview_villages_quicklinks",
         "label": t('settings.overviewVillagesQuicklinksLabel'),

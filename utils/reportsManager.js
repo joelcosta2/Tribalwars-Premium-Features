@@ -44,9 +44,20 @@
     }
 
     function isOwnVillage(coords) {
-        const key = String(coords || '').replace('|', '');
-        const village = TWMap?.villages?.[key];
-        return village && String(village.owner) === String(game_data?.player?.id);
+        const match = String(coords || '').match(/^(\d{1,3})\|(\d{1,3})$/);
+        if (!match) return false;
+
+        const playerId = String(game_data?.player?.id || '');
+        if (!playerId) return false;
+
+        if (typeof TWMap !== 'undefined') {
+            const village = TWMap.villages?.[match[1] + match[2]];
+            if (village) return String(village.owner) === playerId;
+        }
+
+        if (typeof getCachedVillageByCoords !== 'function') return false;
+        const village = getCachedVillageByCoords(Number(match[1]), Number(match[2]));
+        return !!village && String(village.ownerId) === playerId;
     }
 
     function resourceTotal(resources) {

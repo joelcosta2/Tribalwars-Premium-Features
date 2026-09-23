@@ -44,7 +44,7 @@ function renderOverviewVillagesMarketRow(row, village) {
 
 function setOverviewVillagesMarketRowLoading(row) {
     Array.from(row.cells).slice(1).forEach(function (cell) {
-        cell.textContent = '\u2026';
+        cell.replaceChildren(createOverviewVillagesLoadingImage());
         cell.style.textAlign = 'center';
         cell.style.color = '#999';
     });
@@ -75,6 +75,28 @@ function refreshAllVillagesMarketTransports(table, triggerIcon, villages) {
         triggerIcon.dataset.refreshing = 'false';
         triggerIcon.style.opacity = '';
         triggerIcon.style.pointerEvents = '';
+    });
+}
+
+function refreshOverviewVillagesMarket(villages) {
+    const state = overviewVillagesTabsState.refreshState.market;
+    const candidates = getOverviewVillagesRefreshCandidates('market', villages, false);
+    if (!candidates.length) return Promise.resolve();
+
+    return runWithConcurrencyLimit(candidates, function (village) {
+        const id = String(village.id);
+        const request = fetchAndStoreVillageMarketTransports(id).then(function (result) {
+            state.completed.add(id);
+            return result;
+        }).finally(function () {
+            state.inFlight.delete(id);
+        });
+        state.inFlight.set(id, request);
+        return request;
+    }, { concurrency: 1, minDelay: 100, maxDelay: 500 }).then(function () {
+        if (overviewVillagesTabsState.activeTabId === 'market') {
+            renderOverviewVillagesCustomTable('market');
+        }
     });
 }
 

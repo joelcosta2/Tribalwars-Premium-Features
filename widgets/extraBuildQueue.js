@@ -142,23 +142,14 @@ function setBuildQueueButtonLoading(button, isLoading) {
 }
 
 /**
- * Fetches a village's main-building page via AJAX. Works for the currently displayed village
- * as well as any other village belonging to the account — cookies/session apply account-wide,
- * only the "village" query parameter changes. Retries on HTTP 429 (see fetchWithRetry429) since
- * this is called once per village on screen=overview_villages and can otherwise trip the
- * server's rate limiter on accounts with many villages.
+ * Fetches a village's main-building page. Delegates to pageFetchManager.js's fetchMainPage,
+ * which dedupes concurrent requests for the same village (shared with
+ * utils/buildingsManager.js:fetchAndStoreVillageBuildingLevels).
  * @param {string|number} villageId
  * @returns {Promise<{doc: Document, html: string}>}
  */
 function fetchVillageMainPage(villageId) {
-    return fetchWithRetry429({
-        url: getVillageLinkBase(villageId) + 'main',
-        type: 'GET',
-        cache: false
-    }).then(function (data) {
-        const parser = new DOMParser();
-        return { doc: parser.parseFromString(data, 'text/html'), html: data };
-    }).catch(function () {
+    return fetchMainPage(villageId).catch(function () {
         throw new Error('Failed to fetch village ' + villageId + ' main page');
     });
 }
@@ -1520,16 +1511,11 @@ function fetchBuildQueueWidget(update = false, onComplete) {
             createWidgetElement({ identifier: t('buildQueue.title'), contents: loadingContainer, columnToUse: initialColumn, update: false, description: t('buildQueue.description'), widgetKey: 'building_queue', loading: true });
         }
         startBuildQueueResourcePolling();
-        $.ajax({
-            'url': game_data.link_base_pure + 'main',
-            'type': 'GET',
-            'cache': false,
-            'success': function (data) {
-                injectQueues(data, initialColumn ? true : shouldReplace);
-            },
-            'complete': function () {
-                if (onComplete) onComplete();
-            }
+        fetchMainPage().then(function ({ html }) {
+            injectQueues(html, initialColumn ? true : shouldReplace);
+        }).catch(function () {
+        }).finally(function () {
+            if (onComplete) onComplete();
         });
     }
 }

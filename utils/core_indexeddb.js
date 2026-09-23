@@ -9,6 +9,9 @@ const VILLAGE_PROFILE_NOTES_STORE_NAME = 'village_profile_notes';
 const MAP_DATA_STORE_NAME = 'map_data';
 const ALLY_RESERVATIONS_STORE_NAME = 'ally_reservations';
 const QUICK_FARM_ATTACKS_STORE_NAME = 'quick_farm_ongoing_attacks';
+const BENEFIT_POSSIBILITIES_STORE_NAME = 'benefit_possibilities';
+const STORAGE_FILL_TIMES_FIELD = 'storage_fill_times';
+const TRAIN_FINISH_TIMES_FIELD = 'train_finish_times';
 
 var twDbPromise = null;
 // One entry per village: { [villageId]: { building_queue, building_queue_active, ... } }
@@ -47,7 +50,7 @@ function openTwDb() {
             reject(new Error('IndexedDB unavailable'));
             return;
         }
-        const request = indexedDB.open(TW_DB_NAME, 7);
+        const request = indexedDB.open(TW_DB_NAME, 8);
         request.onupgradeneeded = function () {
             const db = request.result;
             if (!db.objectStoreNames.contains(BUILD_QUEUE_STORE_NAME)) {
@@ -75,11 +78,52 @@ function openTwDb() {
                 store.createIndex('sentAtMs', 'sentAtMs', { unique: false });
                 store.createIndex('targetVillageId', 'targetVillageId', { unique: false });
             }
+            if (!db.objectStoreNames.contains(BENEFIT_POSSIBILITIES_STORE_NAME)) {
+                db.createObjectStore(BENEFIT_POSSIBILITIES_STORE_NAME);
+            }
         };
         request.onsuccess = function () { resolve(request.result); };
         request.onerror = function () { reject(request.error); };
     });
     return twDbPromise;
+}
+
+/**
+ * Reads the one-time benefit possibilities snapshot for a world.
+ * @param {string} world
+ * @returns {Promise<Object|null>}
+ */
+function getBenefitPossibilities(world) {
+    return openTwDb().then(function (db) {
+        return new Promise(function (resolve, reject) {
+            const request = db.transaction(BENEFIT_POSSIBILITIES_STORE_NAME, 'readonly')
+                .objectStore(BENEFIT_POSSIBILITIES_STORE_NAME).get(String(world));
+            request.onsuccess = function () { resolve(request.result || null); };
+            request.onerror = function () { reject(request.error); };
+        });
+    });
+}
+
+/**
+ * Stores the validated benefit possibilities snapshot for a world.
+ * @param {string} world
+ * @param {Object} possibilities
+ * @returns {Promise<void>}
+ */
+function storeBenefitPossibilities(world, possibilities) {
+    return performIdbWrite(
+        BENEFIT_POSSIBILITIES_STORE_NAME,
+        'readwrite',
+        function (store) {
+            return store.put({
+                world: String(world),
+                attacker: possibilities.attacker,
+                defender: possibilities.defender,
+                collectedAt: Date.now()
+            }, String(world));
+        },
+        'saving benefit possibilities for ' + world
+    );
 }
 
 function createQuickFarmAttackId() {
@@ -349,6 +393,42 @@ function bqRemove(field, villageId) {
 }
 
 /**
+ * Reads the latest storage fill-time snapshot for a village.
+ * @param {string|number} [villageId]
+ * @returns {{wood:number, stone:number, iron:number}|null}
+ */
+function getStorageFillTimes(villageId) {
+    return bqGet(STORAGE_FILL_TIMES_FIELD, villageId);
+}
+
+/**
+ * Stores a village's storage fill-time snapshot in its IndexedDB record.
+ * @param {string|number} villageId
+ * @param {{wood:number, stone:number, iron:number}} times
+ */
+function storeStorageFillTimes(villageId, times) {
+    bqSet(STORAGE_FILL_TIMES_FIELD, villageId, times);
+}
+
+/**
+ * Reads the latest training finish-time snapshot for a village.
+ * @param {string|number} [villageId]
+ * @returns {{barracks:number[], stable:number[], garage:number[], fetchedAt:number}|null}
+ */
+function getTrainFinishTimes(villageId) {
+    return bqGet(TRAIN_FINISH_TIMES_FIELD, villageId);
+}
+
+/**
+ * Stores a village's training finish-time snapshot in its IndexedDB record.
+ * @param {string|number} villageId
+ * @param {{barracks:number[], stable:number[], garage:number[], fetchedAt:number}} times
+ */
+function storeTrainFinishTimes(villageId, times) {
+    bqSet(TRAIN_FINISH_TIMES_FIELD, villageId, times);
+}
+
+/**
  * Loads every village's persisted build-queue record into the in-memory cache. Must complete
  * before any bqGet/bqSet call site runs (called once at boot, before restoreTimeouts()/start()).
  * @returns {Promise<void>} Resolves even if IndexedDB is unavailable (cache just stays empty).
@@ -421,6 +501,28 @@ function cleanupLegacyRecruitQueueLocalStorage() {
         }
     });
     localStorage.setItem(RECRUIT_QUEUE_CLEANUP_FLAG, '1');
+}
+
+const STORAGE_FILL_TIMES_CLEANUP_FLAG = 'idb_storage_fill_times_cleanup_v1_done';
+
+/**
+ * Removes storage fill-time snapshots from localStorage after the data source moved to IndexedDB.
+ */
+function cleanupLegacyStorageFillTimesLocalStorage() {
+    if (localStorage.getItem(STORAGE_FILL_TIMES_CLEANUP_FLAG)) return;
+    Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('full_storage_times_')) localStorage.removeItem(key);
+    });
+    localStorage.setItem(STORAGE_FILL_TIMES_CLEANUP_FLAG, '1');
+}
+
+const COMMANDS_MAP_CLEANUP_FLAG = 'idb_commands_map_cleanup_v1_done';
+
+function cleanupLegacyMapCommandsLocalStorage() {
+    if (localStorage.getItem(COMMANDS_MAP_CLEANUP_FLAG)) return;
+    localStorage.removeItem('outgoing_units_saved');
+    localStorage.removeItem('outgoing_commands_detailed');
+    localStorage.setItem(COMMANDS_MAP_CLEANUP_FLAG, '1');
 }
 
 /**

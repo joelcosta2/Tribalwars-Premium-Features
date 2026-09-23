@@ -83,6 +83,8 @@ After installation, open the script settings in TribalWars and enable the featur
 
 > Recruit troops from the sidebar. Costs, population, resources, training queues and the maximum affordable amount update as you edit the form.
 
+> Also Available on sidebar.
+
 ![Recruitment Widget](.github/images/recruitTroops.png)
 </details>
 
@@ -91,19 +93,24 @@ After installation, open the script settings in TribalWars and enable the featur
 
 > Manage upgrades from the sidebar. The script can keep a local waiting queue and submit upgrades when resources and server slots are available.
 
+> Also Available on sidebar.
+
 ![Building Queue](.github/images/extraBuildQueue2.png)
 </details>
 
 <details>
-<summary>Coin Minting</summary>
+<summary>Coin Minting Widget</summary>
 
 > Mint coins from any village with a built Academy, from a sidebar quick-link popup. Shows available resources per village and blocks minting when resources are insufficient.
+> Uses the `coin_multi` POST action to mint the selected coins.
+
+![Coin Minting](.github/images/coinMinting.png)
 </details>
 
 <details>
 <summary>Village Groups Widget</summary>
 
-> Shows which Custom Map Groups and manual Overview Villages groups the current village belongs to, from the sidebar. - EXPERIMENTAL, NOT TESTED
+> Shows which Custom groups the current village belongs to, from the sidebar.
 </details>
 
 ### Overview
@@ -120,9 +127,9 @@ After installation, open the script settings in TribalWars and enable the featur
 <details>
 <summary>Overview Villages</summary>
 
-> Enhances the all-villages overview with building queues, one troop column per unit type, storage fill times, a trader/market tab, manually assignable village groups, village notes and customizable quick links.
+> Enhances the all-villages overview with building queues, a dedicated Troops tab, storage fill times, a trader/market tab, manually assignable village groups, village notes and customizable quick links.
 
-> This view requires at least two villages. Troop values may need a manual refresh and can be temporarily stale.
+> The Troops tab mirrors the native five-row troop breakdown for each visible village: own troops, troops in the village, troops away, troops in transit and total. It fetches data from the rally point troops page and normally uses a 30-minute cache; the **Always update troops** setting forces a fresh fetch on refresh.
 
 ![Overview Villages2](.github/images/overviewVillages21.png)
 ![Overview Villages](.github/images/overviewVillages0.png)
@@ -179,14 +186,6 @@ After installation, open the script settings in TribalWars and enable the featur
 <summary>Village Reservations</summary>
 
 > Reserve or release villages from the native village context menu. The action is available on the map and wherever the game displays a village context link, using the reservation planner and local reservation cache.
-</details>
-
-<details>
-<summary>Troop Templates</summary>
-
-> Create, edit, delete and apply custom troop templates in command forms and map attack menus.
-
-![Troop Templates](.github/images/troopTemplates.png)
 </details>
 
 <details>
@@ -287,9 +286,9 @@ After installation, open the script settings in TribalWars and enable the featur
 - Some overview and troop data is cached and may require a refresh.
 - Map and report information depends on the data available from TribalWars pages.
 - The script includes server-timezone handling and is expected to work across different countries and worlds. Some features scrape HTML text, so language or markup changes may cause problems. Please report them so they can be investigated.
-- The custom quick-link source and some anti-bot cache/offline settings are not implemented.
+- Some anti-bot cache/offline settings are not implemented.
 - The dark-mode module exists in the codebase but is not currently exposed as an active setting.
-- The Farm Assistant (`screen=am_farm_twp`) relies on TribalWars serving its normal page layout for an unrecognised screen name; only targets with an existing cached attack report are shown, and there is no in-page navigation link — the URL must be opened manually.
+- The Farm Assistant (`screen=am_farm_twp`) relies on TribalWars serving an empty page for an unrecognised screen name; it caches reports info to be used by the farm assistant.
 
 ## Local Development
 
@@ -298,6 +297,8 @@ After installation, open the script settings in TribalWars and enable the featur
 [main_local.user.js](main_local.user.js) is the local-development entry point. Its `@require` paths must point to local files using the `file:///...` format. In Tampermonkey, enable **Allow access to file URLs** for the browser extension.
 
 Edit the feature files directly, then reload the TribalWars page to test them. Reinstall the local userscript only when changing its metadata or local `@require` paths.
+
+Run `node i18n/validate.js` after changing translations. It checks JSON validity, locale parity, non-empty values and literal `t()` calls across the project.
 
 ## License and Disclaimer
 

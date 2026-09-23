@@ -34,7 +34,7 @@ var default_settings_cookies = {
             name: 'recruit_troops',
             column: LEFT_COLUMN,
             pos: 3,
-            open: false
+            open: true
         },
         {
             name: 'village_groups',
@@ -50,7 +50,7 @@ var default_settings_cookies = {
         remove__premium_promo: true,
         antiBot__disableOnDetection: true,
         show__village_list: true,
-        show__recruit_troops: false,
+        show__recruit_troops: true,
         show__navigation_arrows: true,
         show__widget_popup_shortcuts: {
             enabled: true,
@@ -74,14 +74,10 @@ var default_settings_cookies = {
         show__soft_dark_mode: false,
         show__big_map: false,
         show__overview_villages_queue: true,
-        show__overview_villages_troops: {
-            enabled: true,
-            auto: false,
-            mode: 'full'
-        },
+        show__overview_villages_troops: false,
         show__overview_villages_quicklinks: {
             enabled: true,
-            source: 'custom',
+            source: 'navbar',
             queue: true,
             training: true,
             items: []
@@ -202,21 +198,13 @@ function prepareLocalStorageItems() {
     if (settings_cookies.general[legacyTroopAutoSettingKey] !== undefined) {
         const troopSetting = settings_cookies.general.show__overview_villages_troops;
         const legacyTroopAuto = settings_cookies.general[legacyTroopAutoSettingKey];
-        const autoEnabled = typeof legacyTroopAuto === 'object'
-            ? legacyTroopAuto.enabled !== false
-            : legacyTroopAuto !== false;
-        const autoMode = typeof legacyTroopAuto === 'object' && legacyTroopAuto.mode === 'place'
-            ? 'place'
-            : 'full';
+        const alwaysUpdate = typeof legacyTroopAuto === 'object' && legacyTroopAuto.mode === 'place';
         if (typeof troopSetting !== 'object' || troopSetting === null) {
             settings_cookies.general.show__overview_villages_troops = {
-                enabled: troopSetting !== false,
-                auto: autoEnabled,
-                mode: autoMode
+                alwaysUpdate
             };
         } else {
-            if (troopSetting.auto === undefined) troopSetting.auto = autoEnabled;
-            if (troopSetting.mode === undefined) troopSetting.mode = autoMode;
+            if (troopSetting.alwaysUpdate === undefined) troopSetting.alwaysUpdate = alwaysUpdate;
         }
         delete settings_cookies.general[legacyTroopAutoSettingKey];
         settingsMigrated = true;
@@ -290,25 +278,11 @@ function prepareLocalStorageItems() {
         if (key === 'show__overview_villages_troops') {
             const troopSetting = settings_cookies.general[key];
             if (typeof troopSetting !== 'object' || troopSetting === null) {
-                settings_cookies.general[key] = {
-                    enabled: troopSetting !== false,
-                    auto: false,
-                    mode: 'full'
-                };
+                settings_cookies.general[key] = troopSetting === true;
                 settingsMigrated = true;
             } else {
-                if (troopSetting.enabled === undefined) {
-                    troopSetting.enabled = true;
-                    settingsMigrated = true;
-                }
-                if (troopSetting.auto === undefined) {
-                    troopSetting.auto = false;
-                    settingsMigrated = true;
-                }
-                if (troopSetting.mode === undefined) {
-                    troopSetting.mode = 'full';
-                    settingsMigrated = true;
-                }
+                settings_cookies.general[key] = troopSetting.alwaysUpdate === true || troopSetting.mode === 'place';
+                settingsMigrated = true;
             }
             return;
         }

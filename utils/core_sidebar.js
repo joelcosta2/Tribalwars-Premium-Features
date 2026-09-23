@@ -26,18 +26,31 @@
             || rect.bottom <= 0 || rect.top >= viewportHeight;
     }
 
-    function isMainLayoutWithoutSidebarSpace() {
+    function restoreQuestLogPosition(target) {
+        const existingPortal = document.getElementById('twpf-pinned-sidebar');
+        if (!existingPortal || !questLogOriginalParent) return;
+
+        target.classList.remove('questlog-pin-left');
+        questLogOriginalParent.insertBefore(target, questLogOriginalNextSibling);
+        existingPortal.remove();
+        questLogOriginalParent = null;
+        questLogOriginalNextSibling = null;
+    }
+
+    function isMainLayoutWithoutSidebarSpace(target) {
         const mainLayout = document.getElementById('main_layout');
         if (!mainLayout) return false;
 
-        const styles = window.getComputedStyle(mainLayout);
-        return parseFloat(styles.marginLeft) === 0;
+        const mainLayoutRect = mainLayout.getBoundingClientRect();
+        const sidebarRect = target.getBoundingClientRect();
+        return mainLayoutRect.left < sidebarRect.width;
     }
 
     function updateQuestLogPosition(target) {
         if (!target.classList.contains('questlog')) return;
 
-        const shouldPinLeft = isMainLayoutWithoutSidebarSpace()
+        restoreQuestLogPosition(target);
+        const shouldPinLeft = isMainLayoutWithoutSidebarSpace(target)
             || isOutsideViewport(target);
         target.classList.toggle('questlog-pin-left', shouldPinLeft);
     }
@@ -65,7 +78,7 @@
         questLogOriginalNextSibling = target.nextSibling;
         document.body.appendChild(portal);
         portal.appendChild(target);
-        return portal;
+        return target;
     }
 
     let positionUpdatePending = false;

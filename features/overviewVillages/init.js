@@ -9,6 +9,22 @@ function formatQueueRemaining(ms) {
 	return (d > 0 ? d + 'd ' : '') + (h > 0 ? h + 'h ' : '') + (m > 0 ? m + 'm ' : '') + s + 's';
 }
 
+function createOverviewVillagesLoadingImage() {
+	const image = document.createElement('img');
+	image.alt = '';
+	image.src = 'https://dsbr.innogamescdn.com/asset/d624386d/graphic/loading2.gif';
+	image.style.cssText = 'vertical-align: middle;';
+	return image;
+}
+
+function createOverviewVillagesTableLoadingElement(minHeight) {
+	const loading = document.createElement('div');
+	loading.style.cssText = 'display:flex;align-items:center;justify-content:center;' +
+		(minHeight ? 'min-height:' + minHeight + ';' : '') + 'width:100%;';
+	loading.appendChild(createOverviewVillagesLoadingImage());
+	return loading;
+}
+
 function attachLiveQueueTooltip(anchor, hoverTarget, headerHtml, getBodyHtml) {
 	anchor.setAttribute('data-title', headerHtml);
 	anchor.setAttribute('data-tooltip-tpl', getBodyHtml());
@@ -78,11 +94,83 @@ function appendVillageIdentityCell(row, village, existingCell) {
 
 const overviewVillagesTabsState = {
 	activeTabId: 'production',
+	troopsFilter: 'all',
+	filterRevision: 0,
 	host: null,
 	table: null,
 	tabs: [],
-	villages: []
+	villages: [],
+	visibleVillageIds: new Set(),
+	refreshState: {
+		production: { completed: new Set(), inFlight: new Map() },
+		commands: { completed: new Set(), inFlight: new Map() },
+		market: { completed: new Set(), inFlight: new Map() },
+		troops: { completed: new Set(), inFlight: new Map() }
+	}
 };
+
+function getOverviewVillagesVisibleVillages() {
+	return typeof getOverviewManualGroupVillages === 'function'
+		? getOverviewManualGroupVillages(overviewVillagesTabsState.villages)
+		: overviewVillagesTabsState.villages.slice();
+}
+
+function updateOverviewVillagesVisibleState() {
+	overviewVillagesTabsState.visibleVillageIds = new Set(
+		getOverviewVillagesVisibleVillages().map(village => String(village.id))
+	);
+	overviewVillagesTabsState.filterRevision += 1;
+	return overviewVillagesTabsState.visibleVillageIds;
+}
+
+function isOverviewVillageVisible(villageId) {
+	return overviewVillagesTabsState.visibleVillageIds.has(String(villageId));
+}
+
+function getOverviewVillagesRefreshCandidates(domain, villages, force) {
+	const state = overviewVillagesTabsState.refreshState[domain];
+	if (!state) return villages;
+	return villages.filter(function (village) {
+		const id = String(village.id);
+		return isOverviewVillageVisible(id) && (force || !state.completed.has(id)) && !state.inFlight.has(id);
+	});
+}
+
+function runOverviewVillagesRefresh(domain, villages, fetchVillage, options) {
+	const state = overviewVillagesTabsState.refreshState[domain];
+	if (!state || typeof fetchVillage !== 'function') return Promise.resolve();
+	const force = options?.force === true;
+	const candidates = getOverviewVillagesRefreshCandidates(domain, villages, force);
+	const requests = candidates.map(function (village) {
+		const id = String(village.id);
+		const request = Promise.resolve().then(() => fetchVillage(village)).then(function (result) {
+			state.completed.add(id);
+			return result;
+		}).finally(function () {
+			state.inFlight.delete(id);
+		});
+		state.inFlight.set(id, request);
+		return request;
+	});
+	return Promise.all(requests);
+}
+
+function refreshOverviewVillagesActiveTab(forceTroopsRefresh = false) {
+	const villages = getOverviewVillagesVisibleVillages();
+	if (overviewVillagesTabsState.activeTabId === 'production' && typeof refreshOverviewVillagesBuildQueue === 'function') {
+		return refreshOverviewVillagesBuildQueue(villages);
+	}
+	if (overviewVillagesTabsState.activeTabId === 'troops' && typeof refreshOverviewVillagesTroops === 'function') {
+		return refreshOverviewVillagesTroops(villages, forceTroopsRefresh);
+	}
+	if (overviewVillagesTabsState.activeTabId === 'commands' && typeof refreshOverviewVillagesCommands === 'function') {
+		return refreshOverviewVillagesCommands(villages);
+	}
+	if (overviewVillagesTabsState.activeTabId === 'market' && typeof refreshOverviewVillagesMarket === 'function') {
+		return refreshOverviewVillagesMarket(villages);
+	}
+	return Promise.resolve();
+}
 
 /**
  * Initializes the overview villages feature after all context modules have loaded.
@@ -92,7 +180,6 @@ function initOverviewVillages() {
 
 	if (typeof injectOverviewVillagesNavigationMenu === 'function') injectOverviewVillagesNavigationMenu();
 	if (typeof injectOverviewVillagesBuildQueueColumn === 'function') injectOverviewVillagesBuildQueueColumn();
-	if (typeof injectOverviewVillagesTroopsColumn === 'function') injectOverviewVillagesTroopsColumn();
 	if (typeof injectOverviewVillagesStorageHover === 'function') injectOverviewVillagesStorageHover();
 	if (typeof injectOverviewVillagesQuickLinksIcon === 'function') injectOverviewVillagesQuickLinksIcon();
 }

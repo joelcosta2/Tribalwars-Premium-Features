@@ -209,6 +209,41 @@ function applyBuildQueueOverviewCollapse(cell) {
  * get fresh queue state (persisted via parseAndStoreQueueState, same mechanism used by the
  * per-village widget and the background sweep), then renders the summary cell.
  */
+function refreshOverviewVillagesBuildQueue(villages) {
+    const table = document.getElementById('production_table');
+    if (!table) return Promise.resolve();
+    const state = overviewVillagesTabsState.refreshState.production;
+    const visibleVillages = villages || getOverviewVillagesVisibleVillages();
+    const candidates = getOverviewVillagesRefreshCandidates('production', visibleVillages, false);
+    const rowsToFetch = candidates.map(function (village) {
+        const row = table.querySelector('.quickedit-vn[data-id="' + village.id + '"]')?.closest('tr');
+        const cell = row?.querySelector('.build-queue-overview-cell');
+        if (!cell) return null;
+        cell.replaceChildren(createOverviewVillagesLoadingImage());
+        cell.setAttribute('aria-busy', 'true');
+        return { villageId: String(village.id), cell };
+    }).filter(Boolean);
+
+    return runWithConcurrencyLimit(rowsToFetch, function ({ villageId, cell }) {
+        const request = fetchVillageMainPage(villageId)
+            .then(({ doc }) => {
+                parseAndStoreQueueState(doc, villageId);
+                if (typeof scheduleCompletionNotification === 'function') scheduleCompletionNotification(villageId);
+                const { allBuildingsImgs } = getAllBuildingsImages(doc);
+                renderBuildQueueOverviewCell(cell, villageId, doc, allBuildingsImgs);
+            })
+            .catch(() => {
+                cell.innerHTML = '?';
+                cell.removeAttribute('aria-busy');
+                cell.style.textAlign = 'center';
+                cell.style.color = '#c33';
+            })
+            .finally(() => state.inFlight.delete(villageId));
+        state.inFlight.set(villageId, request);
+        return request.then(() => state.completed.add(villageId));
+    }, { concurrency: 2, minDelay: 100, maxDelay: 250 });
+}
+
 function injectOverviewVillagesBuildQueueColumn() {
     if (!settings_cookies.general['show__overview_villages_queue']) return;
     if (!game_data?.player?.villages || game_data.player.villages < 2) return;
@@ -241,82 +276,43 @@ function injectOverviewVillagesBuildQueueColumn() {
     th.appendChild(toggleIcon);
     headerRow.appendChild(th);
 
-    const rowsToFetch = [];
     table.querySelectorAll('tbody tr').forEach(function (row) {
         const villageId = row.querySelector('.quickedit-vn[data-id]')?.getAttribute('data-id');
         if (!villageId) return;
 
         const cell = document.createElement('td');
         cell.className = 'build-queue-overview-cell';
-        cell.appendChild(createWidgetLoadingElement('30px'));
+        cell.appendChild(createOverviewVillagesLoadingImage());
         cell.setAttribute('aria-busy', 'true');
         cell.style.textAlign = 'center';
         row.appendChild(cell);
 
-        rowsToFetch.push({ villageId, cell });
     });
 
-    // Throttled (max 2 concurrent, staggered) so accounts with many villages don't burst one
-    // request per village at once and trip the server's rate limiter (HTTP 429).
-    runWithConcurrencyLimit(rowsToFetch, function ({ villageId, cell }) {
-        return fetchVillageMainPage(villageId)
-            .then(({ doc }) => {
-                parseAndStoreQueueState(doc, villageId);
-                // Re-arm the instant-free timer too, not just the fake/waiting queue state
-                if (typeof scheduleCompletionNotification === 'function') scheduleCompletionNotification(villageId);
-                const { allBuildingsImgs } = getAllBuildingsImages(doc);
-                renderBuildQueueOverviewCell(cell, villageId, doc, allBuildingsImgs);
-            })
-            .catch(() => {
-                cell.innerHTML = '?';
-                cell.removeAttribute('aria-busy');
-                cell.style.textAlign = 'center';
-                cell.style.color = '#c33';
-            });
-    }, { concurrency: 2, minDelay: 100, maxDelay: 250 });
+    if (overviewVillagesTabsState.activeTabId === 'production') refreshOverviewVillagesBuildQueue();
 }
 
 // Fixed column order for the per-unit troop columns (screen=overview_villages), matches the
 // game's own unit ordering (also used by navigationBar.js's icon picker).
 const storageOverviewTimesCache = {};
-const storageOverviewFetchPromises = {};
 
 /**
- * Fetches a village's /storage page and extracts its wood/stone/iron fill end-times (Unix
- * seconds, same `data-endtime` spans read by getStorageTime() in overview.js).
- * Also persists to `full_storage_times_{villageId}` (same key/format that function uses) so other
- * features benefit from the fresher data, but THIS feature's own display never reads that key
- * back — only the in-memory cache above, which is what enforces the same-page-load rule.
+ * Fetches a village's /storage page and extracts its wood/stone/iron fill end-times, by
+ * delegating to pageFetchManager.js's fetchStoragePage (shared with
+ * features/overview.js:getStorageTime, dedupes concurrent requests for the same village).
+ * Only cached in-memory here (storageOverviewTimesCache) — never re-read from localStorage —
+ * which is what enforces this feature's own same-page-load-only refresh rule.
  * @param {string|number} villageId
  * @returns {Promise<Object|null>} { wood, stone, iron } end-times, or null on failure.
  */
 function fetchVillageStorageTimes(villageId) {
     if (storageOverviewTimesCache[villageId]) return Promise.resolve(storageOverviewTimesCache[villageId]);
-    if (storageOverviewFetchPromises[villageId]) return storageOverviewFetchPromises[villageId];
 
-    const promise = new Promise((resolve) => {
-        $.ajax({
-            url: getVillageLinkBase(villageId) + 'storage',
-            type: 'GET',
-            cache: false,
-            success: function (data) {
-                const spans = $(data).find('span[data-endtime]');
-                const times = {
-                    wood: parseInt($(spans[0]).attr('data-endtime')) || 0,
-                    stone: parseInt($(spans[1]).attr('data-endtime')) || 0,
-                    iron: parseInt($(spans[2]).attr('data-endtime')) || 0
-                };
-                storageOverviewTimesCache[villageId] = times;
-                localStorage.setItem(`full_storage_times_${villageId}`, JSON.stringify(times));
-                resolve(times);
-            },
-            error: function () { resolve(null); }
-        });
-        // Not cached until it resolves — this promise itself is the in-flight de-dupe guard.
-    }).finally(() => { delete storageOverviewFetchPromises[villageId]; });
-
-    storageOverviewFetchPromises[villageId] = promise;
-    return promise;
+    return fetchStoragePage(villageId).then(function () {
+        const times = getStorageFillTimes(villageId);
+        storageOverviewTimesCache[villageId] = times;
+        return times;
+    }).catch(function () { return null; });
 }
 
 /**
@@ -366,6 +362,7 @@ function attachStorageOverviewHover(cell, villageId) {
     }
 
     cell.addEventListener('mouseenter', function (event) {
+        if (!isOverviewVillageVisible(villageId)) return;
         cell.setAttribute('data-tooltip-tpl', getBodyHtml());
         toggleTooltip(event.target, true);
         updateCountdown(event);

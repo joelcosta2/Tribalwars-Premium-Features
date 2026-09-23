@@ -30,39 +30,29 @@ function getStorageTime(callback) {
     }
 
     if (game_data) {
-        $.ajax({
-            url: game_data.link_base_pure + 'storage',
-            method: "GET",
-            success: function (data) {
-                var spans = $(data).find("span[data-endtime]");
-                var fullStorageTimes = {
-                    wood: $(spans[0]).attr("data-endtime"),
-                    stone: $(spans[1]).attr("data-endtime"),
-                    iron: $(spans[2]).attr("data-endtime")
-                };
-                const villageId = game_data.village?.id || 'unknown';
-                localStorage.setItem(`full_storage_times_${villageId}`, JSON.stringify(fullStorageTimes));
+        fetchStoragePage(game_data.village?.id).then(function () {
+            const fullStorageTimes = getStorageFillTimes(game_data.village?.id);
+            //hovers resources
+            addRessourcesHover(fullStorageTimes);
 
-                //hovers resources
-                addRessourcesHover(fullStorageTimes);
-                
-                if (fullStorageTimes) {
-                    minTime = Math.min(...Object.values(fullStorageTimes));
-                    var now = Math.floor(Timing.getCurrentServerTime() / 1000);
-                    var remaining = minTime - now;
-                    
-                    if(remaining) {
-                        var hours = Math.floor(remaining / 3600).toString().padStart(2, '0');
-                        var minutes = Math.floor((remaining % 3600) / 60).toString().padStart(2, '0');
-                        var seconds = (remaining % 60).toString().padStart(2, '0');
-                        
-                        addToVisualLabelExtra('storage', `${hours}:${minutes}:${seconds}`, true, minTime);
-                    }
+            if (fullStorageTimes) {
+                minTime = Math.min(...Object.values(fullStorageTimes));
+                var now = Math.floor(Timing.getCurrentServerTime() / 1000);
+                var remaining = minTime - now;
+
+                if(remaining) {
+                    var hours = Math.floor(remaining / 3600).toString().padStart(2, '0');
+                    var minutes = Math.floor((remaining % 3600) / 60).toString().padStart(2, '0');
+                    var seconds = (remaining % 60).toString().padStart(2, '0');
+
+                    addToVisualLabelExtra('storage', `${hours}:${minutes}:${seconds}`, true, minTime);
                 }
-
-                // Call callback after cache is updated
-                if (typeof callback === 'function') callback(minTime);
             }
+
+            // Call callback after cache is updated
+            if (typeof callback === 'function') callback(minTime);
+        }, function () {
+            if (typeof callback === 'function') callback(minTime);
         });
     } else {
         // If setting is disabled, call callback immediately
@@ -96,7 +86,7 @@ function addRessourcesHover(fullStorageTimes) {
                             const resourceHover = localStorage.getItem('resourceHover');
                             if (resourceHover) {
                                 const villageId = game_data.village?.id || 'unknown';
-                                const latestTimes = JSON.parse(localStorage.getItem(`full_storage_times_${villageId}`)) || {};
+                                const latestTimes = getStorageFillTimes(villageId) || {};
                                 startResourceTimerFull(parseInt(latestTimes[resourceHover]), bodyElement);
                             }
                         }, 500);
@@ -107,13 +97,13 @@ function addRessourcesHover(fullStorageTimes) {
 
                         parentInfoBox.addEventListener("mouseenter", function () {
                             const villageId = game_data.village?.id || 'unknown';
-                            const latestTimes = JSON.parse(localStorage.getItem(`full_storage_times_${villageId}`)) || {};
+                            const latestTimes = getStorageFillTimes(villageId) || {};
                             startResourceTimerFull(parseInt(latestTimes[resourceId]), bodyElement);
                             localStorage.setItem('resourceHover', resourceId);
                         });
                         iconBox.addEventListener("mouseenter", function () {
                             const villageId = game_data.village?.id || 'unknown';
-                            const latestTimes = JSON.parse(localStorage.getItem(`full_storage_times_${villageId}`)) || {};
+                            const latestTimes = getStorageFillTimes(villageId) || {};
                             startResourceTimerFull(parseInt(latestTimes[resourceId]), bodyElement);
                             localStorage.setItem('resourceHover', resourceId);
                         });
@@ -137,7 +127,7 @@ function addRessourcesHover(fullStorageTimes) {
  */
 function getWoodInfo() {
     const villageId = game_data.village?.id || 'unknown';
-    const storageFullTime = JSON.parse(localStorage.getItem(`full_storage_times_${villageId}`));
+    const storageFullTime = getStorageFillTimes(villageId);
     if (storageFullTime) {
         const fullTime = storageFullTime['wood'];
         if (fullTime) {
@@ -163,7 +153,7 @@ function getWoodInfo() {
  */
 function getStoneInfo() {
     const villageId = game_data.village?.id || 'unknown';
-    const storageFullTime = JSON.parse(localStorage.getItem(`full_storage_times_${villageId}`));
+    const storageFullTime = getStorageFillTimes(villageId);
     if (storageFullTime) {
         const fullTime = storageFullTime['stone'];
         if (fullTime) {
@@ -190,7 +180,7 @@ function getStoneInfo() {
  */
 function getIronInfo() {
     const villageId = game_data.village?.id || 'unknown';
-    const storageFullTime = JSON.parse(localStorage.getItem(`full_storage_times_${villageId}`));
+    const storageFullTime = getStorageFillTimes(villageId);
     if (storageFullTime) {
         const fullTime = storageFullTime['iron'];
         if (fullTime) {
@@ -257,16 +247,14 @@ function getWallTime() {
  */
 function getMarketInfo() {
     if (game_data) {
-        $.ajax({
-            url: game_data.link_base_pure + 'market',
-            method: "GET",
-            success: function (data) {
-                const market_merchant_available_count = $(data).find("#market_merchant_available_count").text();
-                const market_merchant_total_count = $(data).find("#market_merchant_total_count").text();
-                if(market_merchant_available_count && market_merchant_total_count)
-                addToVisualLabelExtra('market', `${market_merchant_available_count}\/${market_merchant_total_count}`);
+        const villageId = game_data.village?.id;
+        fetchMarketPage(villageId).then(function () {
+            const snapshot = bqGet('market_transports', villageId);
+            const merchants = snapshot?.status?.merchants;
+            if (merchants?.available != null && merchants?.total != null) {
+                addToVisualLabelExtra('market', `${merchants.available}\/${merchants.total}`);
             }
-        })
+        }).catch(function () {});
     }
     return t('overview.stubLastBuild');
 }
@@ -626,17 +614,18 @@ function storeVillageResourceSnapshot(data, villageId) {
     setVillageResources(villageId, snapshot);
 }
 
-// In-flight requests keyed by villageId so concurrent callers (overview info panel + Recruit
-// Troops widget) requesting the same village share one request instead of firing duplicates
-// (mirrors storageOverviewFetchPromises in overviewVillages.js).
-var trainInfoFetchPromises = {};
-
 /**
  * Fetches the training screen and extracts queue finish times for all training buildings,
- * updates building tile labels, and caches unit costs, queue data, and a resource snapshot.
+ * updates building tile labels, and caches unit costs, queue data, resource snapshots and
+ * training finish times.
+ * Delegates the actual fetch + cache population to pageFetchManager.js's fetchTrainPage, which
+ * dedupes concurrent requests for the same village (shared with
+ * features/overviewVillages/troopsTable.js:fetchAndStoreVillageTroopCounts); only the
+ * page-specific building-tile countdown labels are handled here.
  * @param {Function} [callback] - Called with the raw response HTML after processing completes.
  * @param {string} [villageId] - Defaults to the currently loaded village.
- * @param {string} [linkBase] - Defaults to the currently loaded village's link base.
+ * @param {string} [linkBase] - Unused (kept for call-site compatibility); linkBase is derived
+ * from villageId by pageFetchManager.js.
  * @param {boolean} [updateTiles=true] - Whether to update the overview page's own building tile
  * countdowns — only meaningful when villageId is the page actually loaded; set to false when
  * fetching a DIFFERENT village's data (e.g. from another village's recruit overlay).
@@ -644,71 +633,17 @@ var trainInfoFetchPromises = {};
 function fetchTrainInfo(callback, villageId = game_data?.village?.id || 'unknown', linkBase = game_data?.link_base_pure, updateTiles = true) {
     if (!game_data) return;
 
-    if (trainInfoFetchPromises[villageId]) {
-        trainInfoFetchPromises[villageId].then(function (data) {
-            if (typeof callback === 'function') callback(data);
-        });
-        return;
-    }
+    fetchTrainPage(villageId, { updateTiles }).then(function () {
+        if (updateTiles) {
+            const finishTimes = getTrainFinishTimes(villageId) || {};
+            getBarracksTime(finishTimes.barracks || []);
+            getStableTime(finishTimes.stable || []);
+            getGarageTime(finishTimes.garage || []);
+        }
 
-    const promise = new Promise(function (resolve) {
-        $.ajax({
-            url: linkBase + 'train',
-            method: "GET",
-            success: function (data) {
-                if (updateTiles) {
-                    let barrracksTimes = [],
-                        stableTimes = [],
-                        garageTimes = [];
-                    // Collect barracks training finish times. extractBuildTimestampFromHTML handles
-                    // "today"/"tomorrow" phrasing as well as the explicit date TW shows for entries
-                    // finishing more than a day out (long queues), returning null for unrelated cells.
-                    $(data).find("#trainqueue_wrap_barracks td").each(function () {
-                        const text = $(this).text().trim();
-                        const timestamp = extractBuildTimestampFromHTML(text);
-                        if (timestamp) {
-                            barrracksTimes.push(timestamp)
-                        }
-                    });
-                    getBarracksTime(barrracksTimes);
-
-                    // Collect stable training finish times
-                    $(data).find("#trainqueue_wrap_stable td").each(function () {
-                        const text = $(this).text().trim();
-                        const timestamp = extractBuildTimestampFromHTML(text);
-                        if (timestamp) {
-                            stableTimes.push(timestamp)
-                        }
-                    });
-                    getStableTime(stableTimes)
-
-                    // Collect garage training finish times
-                    $(data).find("#trainqueue_wrap_garage td").each(function () {
-                        const text = $(this).text().trim();
-                        const timestamp = extractBuildTimestampFromHTML(text);
-                        if (timestamp) {
-                            garageTimes.push(timestamp)
-                        }
-                    });
-                    getGarageTime(garageTimes);
-                }
-
-                // Extract and store unit recruitment costs, queue data, and resource snapshot
-                storeAvailableUnitsCosts(data, villageId);
-                storeTrainQueueData(data, villageId, updateTiles);
-                storeVillageResourceSnapshot(data, villageId);
-                resolve(data);
-            },
-            error: function () {
-                // Resolve (not reject) so the in-flight entry clears and future fetches aren't blocked
-                resolve(null);
-            }
-        });
-    }).finally(function () { delete trainInfoFetchPromises[villageId]; });
-
-    trainInfoFetchPromises[villageId] = promise;
-    promise.then(function (data) {
-        if (typeof callback === 'function') callback(data);
+        if (typeof callback === 'function') callback();
+    }, function () {
+        if (typeof callback === 'function') callback(null);
     });
 }
 

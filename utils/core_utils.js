@@ -121,6 +121,11 @@ function start() {
         settings_cookies = localStorage.getItem('settings_cookies') ? JSON.parse(localStorage.getItem('settings_cookies')) : settings_cookies;
         listenTextAreas();
         setCookieCurrentVillage();
+        if (!urlPage.includes('screen=place') || !urlPage.includes('mode=sim')) {
+            if (typeof injectBenefitPossibilitiesFetcher === 'function') {
+                injectBenefitPossibilitiesFetcher();
+            }
+        }
         if (typeof checkEarlyBuildOpportunity === 'function') checkEarlyBuildOpportunity();
         if (typeof captureCurrentVillageMarketTransports === 'function') captureCurrentVillageMarketTransports();
         // Arms every known village's instant-free timer, not just the current one — re-arming is
@@ -182,6 +187,7 @@ function start() {
         } else if (urlPage.includes('screen=place') && urlPage.includes('mode=command')) {
             $(document).ready(function () {
                 if (typeof injectCustomTroopTemplatesFeature === 'function') injectCustomTroopTemplatesFeature();
+                if (typeof captureCurrentVillageCommands === 'function') captureCurrentVillageCommands();
             });
         } else if (urlPage.includes('screen=place') && urlPage.includes('mode=sim')) {
             $(document).ready(function () {

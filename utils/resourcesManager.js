@@ -177,11 +177,6 @@ function storeOverviewVillagesData(source) {
     return resources;
 }
 
-function getResourcesOverviewUrl() {
-    const linkBase = game_data?.link_base_pure;
-    return linkBase ? linkBase + 'overview_villages&mode=prod' : null;
-}
-
 function getResourcesOverviewLastFetchAt() {
     const timestamp = Number(localStorage.getItem(RESOURCES_OVERVIEW_LAST_FETCH_KEY));
     return Number.isFinite(timestamp) ? timestamp : 0;
@@ -190,18 +185,13 @@ function getResourcesOverviewLastFetchAt() {
 function refreshOverviewVillagesResources({ force = false } = {}) {
     if (resourcesOverviewFetchPromise) return resourcesOverviewFetchPromise;
 
-    const url = getResourcesOverviewUrl();
-    if (!url) return Promise.resolve([]);
+    if (!game_data?.link_base_pure) return Promise.resolve([]);
     if (!force && Date.now() - getResourcesOverviewLastFetchAt() < RESOURCES_OVERVIEW_TTL_MS) {
         return Promise.resolve([]);
     }
 
-    resourcesOverviewFetchPromise = fetchWithRetry429({
-        url,
-        type: 'GET',
-        cache: false
-    }).then(data => {
-        const resources = storeOverviewVillagesData(data);
+    resourcesOverviewFetchPromise = fetchOverviewVillagesPage('prod').then(() => {
+        const resources = [];
         safeLocalStorageSet(RESOURCES_OVERVIEW_LAST_FETCH_KEY, String(Date.now()));
         return resources;
     }).catch(error => {

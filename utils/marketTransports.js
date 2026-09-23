@@ -132,15 +132,15 @@ function storeMarketTransports(villageId, snapshot) {
     return storedSnapshot;
 }
 
+/**
+ * Fetches and stores a village's market transport snapshot by delegating to pageFetchManager.js's
+ * fetchMarketPage (shared with features/overview.js:getMarketInfo, dedupes concurrent requests
+ * for the same village).
+ * @param {string|number} villageId
+ * @returns {Promise<void|null>} Resolves after storage, or null on failure.
+ */
 function fetchAndStoreVillageMarketTransports(villageId) {
-    return fetchWithRetry429({
-        url: getVillageLinkBase(villageId) + 'market&mode=transports',
-        type: 'GET',
-        cache: false
-    }).then(function (html) {
-        const doc = new DOMParser().parseFromString(html, 'text/html');
-        return storeMarketTransports(villageId, parseMarketTransportsPage(doc, villageId));
-    }).catch(function () {
+    return fetchMarketPage(villageId).catch(function () {
         return null;
     });
 }

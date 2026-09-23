@@ -196,7 +196,7 @@ function openVillageQuickLinksPopup(villageId, anchorEl) {
 /**
  * Builds a recruit context for a village that ISN'T necessarily the currently loaded page (see
  * createLiveRecruitContext in recruitTroops.js for the sidebar-widget counterpart):
- * resources come from the static villageResourceSnapshots cache (populated by fetchTrainInfo())
+ * resources come from the static resourcesManager cache (populated by fetchTrainInfo())
  * instead of live DOM, and there's no MutationObserver/village-poll since nothing here ticks.
  * @param {string|number} villageId
  * @param {HTMLElement} containerEl
@@ -211,7 +211,7 @@ function createOverlayRecruitContext(villageId, containerEl) {
         pendingDeduction: { wood: 0, stone: 0, iron: 0 },
         calcDebounceTimer: null,
         getResources: () => {
-            const snap = villageResourceSnapshots[villageId];
+            const snap = getVillageResources(villageId);
             if (!snap) return null;
             return {
                 wood: Math.max(0, snap.wood - ctx.pendingDeduction.wood),
@@ -221,11 +221,14 @@ function createOverlayRecruitContext(villageId, containerEl) {
             };
         },
         deductResources: (cost) => {
-            const snap = villageResourceSnapshots[villageId];
+            const snap = getVillageResources(villageId);
             if (!snap) return;
-            snap.wood = Math.max(0, snap.wood - cost.wood);
-            snap.stone = Math.max(0, snap.stone - cost.stone);
-            snap.iron = Math.max(0, snap.iron - cost.iron);
+            setVillageResources(villageId, {
+                ...snap,
+                wood: Math.max(0, snap.wood - cost.wood),
+                stone: Math.max(0, snap.stone - cost.stone),
+                iron: Math.max(0, snap.iron - cost.iron)
+            });
         },
         refreshData: (callback) => fetchTrainInfo(callback, villageId, getVillageLinkBase(villageId), false)
     };
@@ -667,16 +670,14 @@ function appendOverviewVillageQuickLinksIcons(cell, villageId) {
         cell.appendChild(noteIcon);
     }
     noteIcon.setAttribute('data-tooltip-tpl', getOverviewVillagesNotepadTooltipHtml(villageId));
-    if (noteIcon.dataset.quickLinksBound !== 'true') {
-        noteIcon.addEventListener('mouseenter', function (event) {
-            noteIcon.setAttribute('data-tooltip-tpl', getOverviewVillagesNotepadTooltipHtml(villageId));
-            toggleTooltip(event.target, true);
-        });
-        noteIcon.addEventListener('mouseleave', function (event) {
-            toggleTooltip(event.target, false);
-        });
-        noteIcon.dataset.quickLinksBound = 'true';
-    }
+    noteIcon.onmouseenter = function (event) {
+        noteIcon.setAttribute('data-tooltip-tpl', getOverviewVillagesNotepadTooltipHtml(villageId));
+        toggleTooltip(event.target, true);
+    };
+    noteIcon.onmouseleave = function (event) {
+        toggleTooltip(event.target, false);
+    };
+    noteIcon.dataset.quickLinksBound = 'true';
 
     let icon = cell.querySelector('.overview-quicklinks-icon');
     if (!icon) {
@@ -687,13 +688,11 @@ function appendOverviewVillageQuickLinksIcons(cell, villageId) {
         icon.style.cssText = 'position:absolute; right:2px; top:50%; transform:translateY(-50%); width:12px; height:12px; cursor:pointer;';
         cell.appendChild(icon);
     }
-    if (icon.dataset.quickLinksBound !== 'true') {
-        icon.addEventListener('click', function (event) {
-            event.preventDefault();
-            openVillageQuickLinksPopup(villageId, icon);
-        });
-        icon.dataset.quickLinksBound = 'true';
-    }
+    icon.onclick = function (event) {
+        event.preventDefault();
+        openVillageQuickLinksPopup(villageId, icon);
+    };
+    icon.dataset.quickLinksBound = 'true';
 }
 
 function injectOverviewVillagesQuickLinksIcon() {

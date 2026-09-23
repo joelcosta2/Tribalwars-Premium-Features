@@ -1,9 +1,70 @@
 
-/**
- * Fetches outgoing commands from the overview page and stores them in localStorage.
- * Updates map icons if the relevant setting is enabled.
- */
-async function getOutgoingCommandsFromOverview() {
+function getKnownVillageIdsForMap() {
+    const villageIds = new Set();
+    const currentVillageId = game_data?.village?.id;
+    if (currentVillageId != null) villageIds.add(String(currentVillageId));
+
+    try {
+        const villages = JSON.parse(localStorage.getItem('villages_info') || '[]');
+        if (Array.isArray(villages)) {
+            villages.forEach(village => {
+                const villageId = village?.url?.match(/[?&]village=(\d+)/)?.[1];
+                if (villageId) villageIds.add(villageId);
+            });
+        }
+    } catch (error) {
+        console.warn('[Outgoing Commands] Failed to read village list:', error);
+    }
+
+    return Array.from(villageIds);
+}
+
+function getStoredOutgoingCommands() {
+    if (typeof bqGet !== 'function' || typeof COMMANDS_FIELD === 'undefined') return [];
+
+    return getKnownVillageIdsForMap().flatMap(villageId => {
+        const snapshot = bqGet(COMMANDS_FIELD, villageId);
+        return Array.isArray(snapshot?.outgoing) ? snapshot.outgoing : [];
+    });
+}
+
+function getCommandIconName(icon) {
+    const src = typeof icon === 'string' ? icon : icon?.img;
+    const match = src?.match(/\/([^/]+)\.(?:png|webp)$/);
+    return match ? match[1] : null;
+}
+
+function getMapCommandType(commandType) {
+    if (commandType === 'attack' || commandType === 'support') return commandType;
+    if (commandType === 'return' || commandType === 'back' || commandType === 'other_back') return 'return';
+    return null;
+}
+
+function buildOutgoingMapData(commands) {
+    const outgoingUnitsMap = new Map();
+    commands.forEach(command => {
+        const targetCoords = command.targetCoords || command.label?.match(/\((\d+\|\d+)\)/)?.[1];
+        if (!targetCoords) return;
+        const mapCommandType = getMapCommandType(command.type);
+        if (!mapCommandType) return;
+        const existing = outgoingUnitsMap.get(targetCoords) || {
+            name: targetCoords,
+            imgs: [],
+            commandTypes: { attack: 0, support: 0, return: 0 }
+        };
+        (command.icons || []).map(getCommandIconName).filter(Boolean).forEach(icon => existing.imgs.push(icon));
+        existing.commandTypes[mapCommandType]++;
+        outgoingUnitsMap.set(targetCoords, existing);
+    });
+    return Array.from(outgoingUnitsMap.values()).map(entry => ({
+        name: entry.name,
+        imgs: entry.imgs.join(','),
+        commandTypes: entry.commandTypes
+    }));
+}
+
+/** Refreshes outgoing commands from the rally point page and derives the map projections. */
+async function refreshOutgoingCommandsForMap() {
     const { general } = settings_cookies;
     // Early exit if features are disabled
     if (!isMapHoverInfoEnabled() && !general['show__outgoingInfo_map']) {
@@ -22,76 +83,18 @@ async function getOutgoingCommandsFromOverview() {
     }
 
     try {
-        const response = await fetch(game_data.link_base_pure + 'overview');
-        const htmlText = await response.text();
-
-        // Parse the HTML response
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(htmlText, 'text/html');
-        const outgoingTable = doc.querySelector('#commands_outgoings');
-
-        if (!outgoingTable) {
-            localStorage.setItem('outgoing_units_saved', JSON.stringify([]));
-            localStorage.setItem('outgoing_commands_detailed', JSON.stringify([]));
-            _outgoingCommandsCache = [];
-            _outgoingCommandsDetailedCache = [];
-            return;
-        }
-
-        const commandRows = outgoingTable.querySelectorAll('.command-row');
-        const outgoingUnitsMap = new Map();
-        const outgoingCommandsDetailed = [];
-        Array.from(commandRows).forEach(row => {
-            const villageLabel = row.querySelector('.quickedit-label');
-            const hoverDetails = row.querySelectorAll('.command_hover_details img');
-            const unitList = Array.from(hoverDetails).map(img => {
-                const match = img.src.match(/\/([^/]+)\.(?:png|webp)$/);
-                return match ? match[1] : null;
-            }).filter(Boolean);
-            const labelText = villageLabel?.innerText.trim() || '';
-            const villageCoords = labelText.match(/\((.*?)\)/)?.[1] || '';
-            if (!villageCoords) return;
-            const commandType = row.querySelector('.command_hover_details[data-command-type]')?.dataset.commandType;
-            const existing = outgoingUnitsMap.get(villageCoords) || {
-                name: villageCoords,
-                imgs: [],
-                commandTypes: { attack: 0, return: 0 }
-            };
-            existing.imgs.push(...unitList);
-            if (commandType === 'attack' || commandType === 'return') {
-                existing.commandTypes[commandType]++;
-            }
-            outgoingUnitsMap.set(villageCoords, existing);
-
-            // Per-command detail for the map popup's "Own commands" table — kept separate from
-            // the aggregated map above (which only drives the map icon overlay).
-            const endtimeSpan = row.querySelector('span[data-endtime]');
-            const arrivalCell = endtimeSpan?.closest('td')?.previousElementSibling;
-            outgoingCommandsDetailed.push({
-                targetCoords: villageCoords,
-                sourceLabel: labelText.replace(/\(.*?\)/, '').trim(),
-                icons: unitList,
-                endtime: endtimeSpan ? parseInt(endtimeSpan.dataset.endtime, 10) : null,
-                arrivalText: arrivalCell ? arrivalCell.textContent.replace(/\s+/g, ' ').trim() : ''
-            });
-        });
-
-        const outgoing_units = Array.from(outgoingUnitsMap.values()).map(entry => ({
-            name: entry.name,
-            imgs: entry.imgs.join(','),
-            commandTypes: entry.commandTypes
-        }));
-        localStorage.setItem('outgoing_units_saved', JSON.stringify(outgoing_units));
-        localStorage.setItem('outgoing_commands_detailed', JSON.stringify(outgoingCommandsDetailed));
+        await fetchPlaceCommandPage(game_data?.village?.id);
+        const outgoingCommands = getStoredOutgoingCommands();
+        const outgoingUnits = buildOutgoingMapData(outgoingCommands);
         _outgoingCommandsLastFetch = Date.now();
-        _outgoingCommandsCache = outgoing_units;
-        _outgoingCommandsDetailedCache = outgoingCommandsDetailed;
+        _outgoingCommandsCache = outgoingUnits;
+        _outgoingCommandsDetailedCache = outgoingCommands;
         if (general['show__outgoingInfo_map'] && typeof mapReady === 'function') {
             await mapReady();
             addOutgoingIcons();
         }
     } catch (error) {
-        console.error('[Outgoing Commands] Failed to fetch overview data:', error);
+        console.error('[Outgoing Commands] Failed to fetch place command data:', error);
     }
 }
 
@@ -106,11 +109,11 @@ const mapReady = () => new Promise(resolve => {
 });
 
 function addOutgoingIcons() {
-    if (_outgoingCommandsCache === null) {
-        const raw = localStorage.getItem('outgoing_units_saved');
-        if (!raw) return;
-        _outgoingCommandsCache = JSON.parse(raw);
-    }
+    // Re-read the per-village snapshots on every redraw. The commands tab may have
+    // refreshed one of them after the map cache was first projected.
+    const outgoingCommands = getStoredOutgoingCommands();
+    _outgoingCommandsCache = buildOutgoingMapData(outgoingCommands);
+    _outgoingCommandsDetailedCache = outgoingCommands;
     const mapContainer = document.getElementById('map_container');
     if (!mapContainer) return;
     document.querySelectorAll('.outgoing_units_overlay').forEach(el => el.remove());
@@ -123,7 +126,7 @@ function addOutgoingIcons() {
         if (!villageElement?.parentNode) return;
 
         const commandTypes = command.commandTypes || {};
-        const visibleTypes = ['attack', 'return'].filter(type => Number(commandTypes[type]) > 0);
+        const visibleTypes = ['attack', 'support', 'return'].filter(type => Number(commandTypes[type]) > 0);
         if (!visibleTypes.length) return;
 
         const iconSize = 16;
@@ -222,8 +225,8 @@ function addReservationIcons() {
 }
 
 /**
- * Renders a dedicated barracks icon for attacks sent through the farm assistant.
- * This keeps the normal outgoing-command icons untouched.
+ * Renders a temporary attack icon for commands sent through the farm assistant
+ * or the native command popup until the outgoing-command cache is refreshed.
  */
 function addFarmAttackIcons() {
     const savedData = Array.from(_farmAttackCoordsSet);
@@ -233,7 +236,7 @@ function addFarmAttackIcons() {
     const mapContainer = document.getElementById('map_container');
     if (!mapContainer) return;
 
-    // Remove standalone overlays and any previously appended barracks icons
+    // Remove standalone overlays and any previously appended temporary icons.
     document.querySelectorAll('.farm_attack_overlay').forEach(el => el.remove());
     document.querySelectorAll('.farm_attack_img').forEach(el => el.remove());
 
@@ -246,32 +249,43 @@ function addFarmAttackIcons() {
         if (!villageElement) return;
 
         const farmIcon = document.createElement('img');
-        farmIcon.src = _getNavAssetBase() + 'buildings/barracks.webp';
+        farmIcon.src = '/graphic/map/attack.png';
         farmIcon.alt = '';
         farmIcon.className = 'farm_attack_img';
-        Object.assign(farmIcon.style, { width: '15px', height: '15px', display: 'block' });
+        Object.assign(farmIcon.style, { width: '16px', height: '16px', display: 'block' });
 
         const existingOverlay = document.getElementById(`outgoing_overlay_${villageCoords}`);
         if (existingOverlay) {
-            // Slot into the existing icon grid — no positional overlap
+            // Extend the same right-aligned outgoing overlay by one icon.
             existingOverlay.appendChild(farmIcon);
+            const overlayWidth = existingOverlay.offsetWidth || parseFloat(existingOverlay.style.width) || 0;
+            const newWidth = overlayWidth + 17;
+            const top = parseFloat(villageElement.style.top);
+            const left = parseFloat(villageElement.style.left);
+            if (Number.isFinite(top) && Number.isFinite(left)) {
+                Object.assign(existingOverlay.style, {
+                    left: `${left + (villageElement.offsetWidth || 32) - newWidth - 1}px`,
+                    width: `${newWidth}px`
+                });
+            }
         } else {
-            // No outgoing overlay yet — create a standalone one with the same grid layout
-            const { top, left } = villageElement.style;
+            // No outgoing overlay yet — create a standalone right-aligned overlay.
+            const top = parseFloat(villageElement.style.top);
+            const left = parseFloat(villageElement.style.left);
+            if (!Number.isFinite(top) || !Number.isFinite(left)) return;
             const overlay = document.createElement('div');
             overlay.id = `outgoing_overlay_${villageCoords}`;
             overlay.className = 'farm_attack_overlay';
             Object.assign(overlay.style, {
                 position: 'absolute',
-                top,
-                left,
+                top: `${top + 1}px`,
+                left: `${left + (villageElement.offsetWidth || 32) - 16 - 1}px`,
                 zIndex: '11',
                 pointerEvents: 'none',
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 15px)',
-                gridAutoRows: '15px',
+                display: 'flex',
                 gap: '1px',
-                width: 'max-content',
+                width: '16px',
+                height: '16px',
                 alignItems: 'start'
             });
             overlay.appendChild(farmIcon);
@@ -410,10 +424,43 @@ function insertReservationInfoRow(tgtVillage, popUpBody) {
     popUpBody.appendChild(row);
 }
 
+/**
+ * Injects the locally stored profile note for a non-owned village into the map popup.
+ * @param {Object} tgtVillage - Village object from TWMap.villages (needs `.id`).
+ * @param {HTMLElement} popUpBody
+ */
+function insertOtherVillageNoteRow(tgtVillage, popUpBody) {
+    document.getElementById('info_other_village_note')?.remove();
+    if (!popUpBody || !tgtVillage?.id || typeof villageProfileNoteGet !== 'function') return;
+
+    const note = villageProfileNoteGet(tgtVillage.id);
+    if (!note || !note.trim()) return;
+
+    const noteRow = document.createElement('tr');
+    noteRow.id = 'info_other_village_note';
+    const noteTd = document.createElement('td');
+    noteTd.colSpan = 2;
+    noteTd.appendChild(document.createElement('hr'));
+
+    const label = document.createElement('u');
+    label.textContent = t('map.notepadNote') + ':';
+    noteTd.appendChild(label);
+
+    const noteDiv = document.createElement('div');
+    noteDiv.style.whiteSpace = 'pre-wrap';
+    noteDiv.innerHTML = convertBBCodeToHTML(note);
+    if (typeof resolveNotepadBBCodeLinks === 'function') resolveNotepadBBCodeLinks(noteDiv);
+    noteTd.appendChild(noteDiv);
+
+    noteRow.appendChild(noteTd);
+    popUpBody.appendChild(noteRow);
+}
+
 const OWN_VILLAGE_DATA_TTL_MS = 5 * 60 * 1000;
 const OWN_VILLAGE_HOVER_INTENT_MS = 500;
 let _ownVillageHoverIntentTimer = null;
 const _ownVillageFetchInFlight = new Set();
+const _ownVillageRefreshCompleted = new Set();
 
 /**
  * True when the troop or building snapshot for this village is missing or older than the TTL.
@@ -429,34 +476,40 @@ function isOwnVillageDataStale(villageId) {
 }
 
 /**
- * Debounced (hover-intent) active refresh of an own village's troops/buildings/resources, so
- * the map popup reflects near-live data instead of whatever another feature happened to cache.
- * Only fires network requests once the popup has stayed on the same village for
- * OWN_VILLAGE_HOVER_INTENT_MS, and only if that village's data is actually stale — a quick
- * sweep across many own villages never triggers a request per village.
+ * Debounced (hover-intent) active refresh of an own village's troops/buildings/resources.
+ * Each village is refreshed once per map page load; the in-flight and completed guards prevent
+ * duplicate requests when the same popup is rebuilt or revisited during that page session.
  * @param {Object} tgtVillage - Village object from TWMap.villages (needs `.id`).
  */
 function scheduleOwnVillageRefresh(tgtVillage) {
     clearTimeout(_ownVillageHoverIntentTimer);
-    if (!tgtVillage?.id || !isOwnVillageDataStale(tgtVillage.id) || _ownVillageFetchInFlight.has(tgtVillage.id)) return;
+    const villageId = tgtVillage?.id;
+    const villageKey = villageId == null ? null : String(villageId);
+    if (!villageKey || _ownVillageFetchInFlight.has(villageKey) || _ownVillageRefreshCompleted.has(villageKey)) return;
 
     _ownVillageHoverIntentTimer = setTimeout(() => {
-        if (TWMap.popup._currentVillage !== tgtVillage.id || _ownVillageFetchInFlight.has(tgtVillage.id)) return;
-        _ownVillageFetchInFlight.add(tgtVillage.id);
+        if (TWMap.popup._currentVillage !== villageId || _ownVillageFetchInFlight.has(villageKey)
+            || _ownVillageRefreshCompleted.has(villageKey)) return;
+        _ownVillageFetchInFlight.add(villageKey);
 
         Promise.all([
             typeof fetchAndStoreVillageTroopCounts === 'function'
-                ? fetchAndStoreVillageTroopCounts(tgtVillage.id, { mode: 'place' })
+                ? fetchAndStoreVillageTroopCounts(villageId, { mode: 'place' })
                 : Promise.resolve(),
             typeof fetchAndStoreVillageBuildingLevels === 'function'
-                ? fetchAndStoreVillageBuildingLevels(tgtVillage.id)
+                ? fetchAndStoreVillageBuildingLevels(villageId)
                 : Promise.resolve()
-        ]).finally(() => {
-            _ownVillageFetchInFlight.delete(tgtVillage.id);
+        ]).then(() => {
+            _ownVillageRefreshCompleted.add(villageKey);
+        }).finally(() => {
+            _ownVillageFetchInFlight.delete(villageKey);
             // Popup may have moved to a different village (or closed) while we waited.
-            if (TWMap.popup._currentVillage !== tgtVillage.id) return;
+            if (TWMap.popup._currentVillage !== villageId) return;
             const liveBody = document.getElementById('map_popup')?.querySelector('tbody');
-            if (liveBody) insertOwnVillageDetailsRows(tgtVillage, liveBody);
+            if (liveBody) {
+                insertOwnVillageDetailsRows(tgtVillage, liveBody);
+                updateOwnVillageTroopCountsInTravelTable(villageId);
+            }
         });
     }, OWN_VILLAGE_HOVER_INTENT_MS);
 }
@@ -585,34 +638,6 @@ function insertOwnVillageDetailsRows(tgtVillage, popUpBody) {
             appendRow(popTraderRow);
         }
 
-        // Troops: bordered table, all trackable unit types, "total<br>(home)" per cell —
-        // matches the native popup's unit_count_home layout.
-        const troopCounts = bqGet('village_unit_counts', villageId);
-        if (troopCounts) {
-            const unitOrder = typeof getOverviewVillagesTroopUnitOrder === 'function'
-                ? getOverviewVillagesTroopUnitOrder()
-                : Object.keys(troopCounts);
-            const troopItems = unitOrder.map(unit => {
-                const [homeStr, totalStr] = String(troopCounts[unit] || '0/0').split('/');
-                const home = parseInt(homeStr, 10) || 0;
-                const total = parseInt(totalStr, 10) || home;
-                return {
-                    icon: assetBase + 'unit/unit_' + unit + '.webp',
-                    title: getUnitDisplayName(unit),
-                    valueHtml: total > 0 ? `${total}<br><span class="unit_count_home">(${home})</span>` : ''
-                };
-            });
-            const troopsTable = createBorderedIconValueTable(troopItems);
-            if (troopsTable) {
-                const troopsRow = document.createElement('tr');
-                const troopsTd = document.createElement('td');
-                troopsTd.colSpan = 2;
-                troopsTd.appendChild(troopsTable);
-                troopsRow.appendChild(troopsTd);
-                appendRow(troopsRow);
-            }
-        }
-
         // Buildings: bordered table, one column per building found in the fetched screen=main.
         const buildingLevels = getVillageBuildingLevels(villageId);
         if (buildingLevels) {
@@ -637,6 +662,7 @@ function insertOwnVillageDetailsRows(tgtVillage, popUpBody) {
     const note = notepadGetAll()[String(villageId)];
     if (note) {
         const noteRow = document.createElement('tr');
+        noteRow.id = 'info_own_village_note';
         const noteTd = document.createElement('td');
         noteTd.colSpan = 2;
         noteTd.appendChild(document.createElement('hr'));
@@ -650,6 +676,38 @@ function insertOwnVillageDetailsRows(tgtVillage, popUpBody) {
         noteRow.appendChild(noteTd);
         appendRow(noteRow);
     }
+}
+
+function updateOwnVillageTroopCountsInTravelTable(villageId) {
+    const travelTable = document.querySelector('#info_travel_time table');
+    if (!travelTable) return;
+
+    travelTable.querySelector('#info_own_village_troops')?.remove();
+    if (isOwnVillageDataStale(villageId)) return;
+
+    const troopCounts = bqGet('village_unit_counts', villageId);
+    if (!troopCounts) return;
+
+    const iconCells = Array.from(travelTable.rows[0]?.cells || []);
+    if (!iconCells.length) return;
+
+    const troopRow = document.createElement('tr');
+    troopRow.id = 'info_own_village_troops';
+    troopRow.className = 'center';
+    iconCells.forEach((iconCell, index) => {
+        const unit = iconCell.dataset.unit;
+        const [homeStr, totalStr] = String(troopCounts[unit] || '0/0').split('/');
+        const home = parseInt(homeStr, 10) || 0;
+        const total = parseInt(totalStr, 10) || home;
+        const backgroundColor = index % 2 === 0 ? '#F8F4E8' : '#DED3B9';
+        const countCell = document.createElement('td');
+        countCell.style.cssText = `padding:2px;background-color:${backgroundColor}`;
+        countCell.innerHTML = total > 0
+            ? `${total}<br><span class="unit_count_home">(${home})</span>`
+            : '';
+        troopRow.appendChild(countCell);
+    });
+    travelTable.appendChild(troopRow);
 }
 
 /**
@@ -669,7 +727,25 @@ async function getReportInfoToMap(currentCoords, currentPopUpBody) {
     // Own villages (including ones just conquered) shouldn't show morale or old
     // enemy-report data — the village's current owner is what matters, not who
     // owned it when the report was generated.
-    const isOwnVillage = tgtVillage?.owner === game_data?.player?.id.toString();
+    const isOwnVillage = tgtVillage?.owner != null
+        && String(tgtVillage.owner) === String(game_data?.player?.id);
+
+    // Reserve the first custom row for morale so its position does not depend on the API response.
+    if (isMapHoverInfoEnabled('morale') && tgtVillage?.owner && !isOwnVillage
+        && TWMap.players?.[tgtVillage.owner]?.points > 0) {
+        const moraleRow = document.createElement('tr');
+        moraleRow.id = 'info_morale';
+        const moraleTh = document.createElement('th');
+        moraleTh.textContent = t('map.morale');
+        const moraleTd = document.createElement('td');
+        const throbber = document.createElement('img');
+        throbber.src = '/graphic/throbber.gif';
+        throbber.alt = t('common.loading');
+        moraleTd.appendChild(throbber);
+        moraleRow.append(moraleTh, moraleTd);
+        const extraRow = currentPopUpBody.querySelector('#map_popup_extra');
+        currentPopUpBody.insertBefore(moraleRow, extraRow?.nextSibling || null);
+    }
 
     // --- Reservation (via features/allyReservations.js, not native premium data) ---
     document.getElementById('info_reservation')?.remove();
@@ -696,20 +772,14 @@ async function getReportInfoToMap(currentCoords, currentPopUpBody) {
             // which detaches the original tbody before the morale POST resolves.
             // TWMap.popup._currentVillage guards against injecting into a different village's popup.
             const injectMoraleRow = (morale) => {
-                document.getElementById('info_morale')?.remove();
                 if (TWMap.popup._currentVillage !== tgtVillage.id) return;
                 const liveBody = document.getElementById('map_popup')?.querySelector('tbody');
                 if (!liveBody) return;
                 const color = morale >= 90 ? '#4caf50' : morale >= 70 ? '#ff9800' : morale >= 50 ? '#ff5722' : '#f44336';
-                const moraleRow = document.createElement('tr');
-                moraleRow.id = 'info_morale';
-                const moraleTh = document.createElement('th');
-                moraleTh.textContent = t('map.morale');
-                const moraleTd = document.createElement('td');
+                const moraleTd = liveBody.querySelector('#info_morale td');
+                if (!moraleTd) return;
                 moraleTd.textContent = `${morale}%`;
                 moraleTd.style.cssText = `color:${color};font-weight:bold`;
-                moraleRow.append(moraleTh, moraleTd);
-                liveBody.appendChild(moraleRow);
             };
 
             if (_moraleCache.has(ownerId)) {
@@ -766,7 +836,7 @@ async function getReportInfoToMap(currentCoords, currentPopUpBody) {
         }
     }
 
-    // --- Travel time: all units, compact grid (icons row + H:MM times row) ---
+    // --- Travel time: all units, matching the native two-row table ---
     document.getElementById('info_travel_time')?.remove();
     if (isMapHoverInfoEnabled('troopDistance') && typeof calculateDistanceToTarget === 'function' && game_data?.units) {
         if (_unitSpeedsCache === null) {
@@ -782,35 +852,50 @@ async function getReportInfoToMap(currentCoords, currentPopUpBody) {
             travelRow.id = 'info_travel_time';
             const travelTd = document.createElement('td');
             travelTd.colSpan = 2;
-            travelTd.style.padding = '3px 0';
+            travelTd.style.padding = '2px';
 
-            const grid = document.createElement('div');
-            grid.style.cssText = `display:grid;grid-template-columns:repeat(${units.length},1fr);gap:2px;text-align:center`;
+            const travelTable = document.createElement('table');
+            travelTable.style.width = '100%';
+            travelTable.cellPadding = 0;
+            travelTable.cellSpacing = 0;
+
+            const iconRow = document.createElement('tr');
+            iconRow.className = 'center';
+            const timeRow = document.createElement('tr');
+            timeRow.className = 'center';
 
             // Row 1: unit icons
-            units.forEach(unit => {
+            units.forEach((unit, index) => {
+                const backgroundColor = index % 2 === 0 ? '#F8F4E8' : '#DED3B9';
+                const iconCell = document.createElement('td');
+                iconCell.style.cssText = `padding:2px;background-color:${backgroundColor}`;
+                iconCell.dataset.unit = unit;
                 const img = document.createElement('img');
-                img.src = `${assetBase}unit/unit_${unit}.webp`;
+                img.src = `${assetBase}unit/unit_${unit}.png`;
                 img.title = getUnitDisplayName(unit);
-                img.style.cssText = 'width:16px;height:16px;display:block;margin:0 auto';
-                grid.appendChild(img);
+                img.alt = getUnitDisplayName(unit);
+                iconCell.appendChild(img);
+                iconRow.appendChild(iconCell);
             });
 
-            // Row 2: H:MM travel times — hover each cell for full H:MM:SS
-            units.forEach(unit => {
+            // Row 2: full H:MM:SS travel times
+            units.forEach((unit, index) => {
+                const backgroundColor = index % 2 === 0 ? '#F8F4E8' : '#DED3B9';
+                const timeCell = document.createElement('td');
+                timeCell.style.cssText = `padding:2px;background-color:${backgroundColor}`;
                 const totalMins = unitSpeeds[unit] * distance;
-                const h = Math.floor(totalMins / 60);
-                const m = Math.floor(totalMins % 60);
-                const span = document.createElement('span');
-                span.textContent = `${h}:${String(m).padStart(2, '0')}`;
-                span.title = typeof formatMinutesToTime === 'function' ? formatMinutesToTime(totalMins) : '';
-                span.style.cssText = 'font-size:9px;display:block';
-                grid.appendChild(span);
+                const timeText = typeof formatMinutesToTime === 'function'
+                    ? formatMinutesToTime(totalMins)
+                    : '';
+                timeCell.textContent = timeText;
+                timeRow.appendChild(timeCell);
             });
 
-            travelTd.appendChild(grid);
+            travelTable.append(iconRow, timeRow);
+            travelTd.appendChild(travelTable);
             travelRow.appendChild(travelTd);
             currentPopUpBody.appendChild(travelRow);
+            if (isOwnVillage) updateOwnVillageTroopCountsInTravelTable(tgtVillage.id);
         }
     }
 
@@ -818,6 +903,13 @@ async function getReportInfoToMap(currentCoords, currentPopUpBody) {
     if (isMapHoverInfoEnabled('lastAttack')) {
         insertOutgoingCommandsTable(currentCoords, currentPopUpBody);
     }
+
+    if (!isOwnVillage) {
+        insertOtherVillageNoteRow(tgtVillage, currentPopUpBody);
+    }
+    document.querySelectorAll('#info_own_village_note, #info_other_village_note').forEach(noteRow => {
+        currentPopUpBody.appendChild(noteRow);
+    });
 }
 
 /**
@@ -829,8 +921,7 @@ async function getReportInfoToMap(currentCoords, currentPopUpBody) {
  */
 function insertOutgoingCommandsTable(currentCoords, currentPopUpBody) {
     if (_outgoingCommandsDetailedCache === null) {
-        const raw = localStorage.getItem('outgoing_commands_detailed');
-        if (raw) _outgoingCommandsDetailedCache = JSON.parse(raw);
+        _outgoingCommandsDetailedCache = getStoredOutgoingCommands();
     }
     const commands = (_outgoingCommandsDetailedCache || []).filter(cmd => cmd.targetCoords === currentCoords);
     if (!commands.length) return;
@@ -863,17 +954,22 @@ function insertOutgoingCommandsTable(currentCoords, currentPopUpBody) {
         const iconsTd = document.createElement('td');
         (cmd.icons || []).forEach(icon => {
             const img = document.createElement('img');
-            img.src = _getNavAssetBase() + 'command/' + icon + '.png';
+            const iconName = getCommandIconName(icon);
+            if (!iconName) return;
+            img.src = typeof icon === 'object' && icon.img
+                ? icon.img
+                : _getNavAssetBase() + 'command/' + iconName + '.png';
             img.alt = '';
             iconsTd.appendChild(img);
         });
-        iconsTd.appendChild(document.createTextNode(' ' + cmd.sourceLabel));
+        const sourceLabel = (cmd.label || '').replace(/\s*\(\d+\|\d+\)\s*$/, '').trim();
+        iconsTd.appendChild(document.createTextNode(' ' + sourceLabel));
 
         const arrivalTd = document.createElement('td');
         arrivalTd.textContent = cmd.arrivalText || '';
 
         const countdownTd = document.createElement('td');
-        const remaining = cmd.endtime && typeof endTimeToTimer === 'function' ? endTimeToTimer(cmd.endtime) : null;
+        const remaining = cmd.endTimeSec && typeof endTimeToTimer === 'function' ? endTimeToTimer(cmd.endTimeSec) : null;
         countdownTd.textContent = remaining ? remaining.join(':') : '';
 
         row.append(iconsTd, arrivalTd, countdownTd);
@@ -1070,9 +1166,61 @@ function createBigMapOption() {
     mapConfig.insertBefore(mapOptionsTable, mapSearch);
 }
 
-// In-memory set of coords attacked via the farm assistant this session.
+// In-memory set of coords attacked via Farm Assistant or the native command popup this session.
 // Intentionally not persisted — icons are temporary and reset on page refresh.
 const _farmAttackCoordsSet = new Set();
+
+let _nativeCommandHookInstalled = false;
+let _nativeCommandSubmitSnapshot = null;
+
+function readNativeCommandSubmitSnapshot(form) {
+    if (!form || form.id !== 'command-data-form') return null;
+
+    const data = new FormData(form);
+    const targetWidget = typeof CommandPopup !== 'undefined' ? CommandPopup.target_widget : null;
+    const clickedButton = String(targetWidget?.clicked_button || '').toLowerCase();
+    const hasAttackField = data.has('attack') || data.has('target_attack');
+    const hasSupportField = data.has('support') || data.has('target_support');
+    const commandType = clickedButton.includes('support') || (hasSupportField && !hasAttackField)
+        ? 'support'
+        : clickedButton.includes('attack') || hasAttackField
+            ? 'attack'
+            : null;
+    const x = String(data.get('x') || '').trim();
+    const y = String(data.get('y') || '').trim();
+
+    if (!commandType || !/^\d{1,3}$/.test(x) || !/^\d{1,3}$/.test(y)) return null;
+
+    return {
+        commandType,
+        coords: `${x}|${y}`,
+        targetId: String(data.get('target') || '').trim(),
+        sourceVillageId: String(data.get('source_village') || '').trim()
+    };
+}
+
+function handleNativeCommandSubmit(event) {
+    const snapshot = readNativeCommandSubmitSnapshot(event.target);
+    if (snapshot) _nativeCommandSubmitSnapshot = snapshot;
+}
+
+function markNativeAttackOnMap() {
+    const snapshot = _nativeCommandSubmitSnapshot;
+    _nativeCommandSubmitSnapshot = null;
+    if (!snapshot || snapshot.commandType !== 'attack' || !snapshot.coords) return;
+
+    _farmAttackCoordsSet.add(snapshot.coords);
+    addFarmAttackIcons();
+}
+
+function installNativeCommandMapHook() {
+    if (_nativeCommandHookInstalled || typeof CommandPopup === 'undefined'
+        || typeof CommandPopup.hookCommandSent !== 'function') return;
+
+    _nativeCommandHookInstalled = true;
+    document.addEventListener('submit', handleNativeCommandSubmit, true);
+    CommandPopup.hookCommandSent(markNativeAttackOnMap);
+}
 
 // In-memory caches for localStorage data read on every map drag.
 // Avoids repeated JSON.parse(localStorage.getItem(...)) on each onMovePixel call.
@@ -1099,6 +1247,19 @@ function scheduleMapIconsRefresh() {
         addFarmAttackIcons();
         addReservationIcons();
     }, 0);
+}
+
+let _outgoingIconsContextHookInstalled = false;
+function installOutgoingIconsContextHook() {
+    if (_outgoingIconsContextHookInstalled || !settings_cookies.general['show__outgoingInfo_map']
+        || typeof TWMap?.context?.spawn !== 'function') return;
+
+    _outgoingIconsContextHookInstalled = true;
+    const originalSpawn = TWMap.context.spawn.bind(TWMap.context);
+    TWMap.context.spawn = function (village, x, y) {
+        originalSpawn(village, x, y);
+        scheduleMapIconsRefresh();
+    };
 }
 
 // Cache for unit speed data — set once at startup, safe to hold in memory.
@@ -1365,6 +1526,8 @@ function initializeTroopTemplates(targetID, isBarbarian = false, renderToken = _
 }
 
 if (typeof TWMap !== 'undefined' && !isPremiumAccount()) {
+    installNativeCommandMapHook();
+
     // Hide native Farm Assistant context buttons if the feature is not active for this account
     if (!game_data.features?.FarmAssistent?.active) {
         const style = document.createElement('style');
@@ -1374,7 +1537,7 @@ if (typeof TWMap !== 'undefined' && !isPremiumAccount()) {
 
     //initiate target_village as 0
     GM_setValue("target_village", 0);
-    getOutgoingCommandsFromOverview();
+    refreshOutgoingCommandsForMap();
     createBigMapOption();
     // Check for new reports on every map page entry, independently of map display settings.
     syncMapReportsOnLoad();
@@ -1394,7 +1557,7 @@ if (typeof TWMap !== 'undefined' && !isPremiumAccount()) {
 
             if (currentPopUpBody && !currentPopUpBody.querySelector('#map_popup_extra')) {
                 currentPopUpBody.appendChild(tr);
-                document.querySelectorAll("#info_last_attack, #info_outgoing_units, #info_travel_time, #info_morale, #info_reservation, #info_outgoing_commands_table, .info-own-village-row").forEach(el => el.remove());
+                document.querySelectorAll("#info_last_attack, #info_outgoing_units, #info_travel_time, #info_morale, #info_reservation, #info_other_village_note, #info_outgoing_commands_table, .info-own-village-row").forEach(el => el.remove());
                 getReportInfoToMap(currentCoords, currentPopUpBody);
             }
         };
@@ -1418,6 +1581,8 @@ if (typeof TWMap !== 'undefined' && !isPremiumAccount()) {
             }
         }
     }
+
+    installOutgoingIconsContextHook();
 
     if (typeof reservationsGetAll === 'function') {
         mapReady().then(addReservationIcons);

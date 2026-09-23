@@ -123,13 +123,7 @@ async function fetchAndExecuteBuildInstantFree(expectedCompletionMs, villageId) 
     const vId = villageId || game_data?.village?.id;
     let doc;
     try {
-        const url = (typeof getVillageLinkBase === 'function' ? getVillageLinkBase(vId) : game_data.link_base_pure) + 'main';
-        const resp = await fetch(url, { credentials: 'include' });
-        if (!resp.ok) {
-            console.error('[BuildInstantFree] Fetch failed:', resp.status, resp.statusText);
-            return;
-        }
-        doc = new DOMParser().parseFromString(await resp.text(), 'text/html');
+        ({ doc } = await fetchMainPage(vId));
     } catch (e) {
         console.error('[BuildInstantFree] Fetch exception:', e);
         return;

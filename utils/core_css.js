@@ -41,6 +41,15 @@ var customCSS = `
     white-space: nowrap;
 }
 
+.overview-villages-topbar-menu {
+    display: none;
+}
+
+#menu_row > .menu-item:hover > .overview-villages-topbar-menu,
+#menu_row2 > .box-item:hover > .overview-villages-topbar-menu {
+    display: table;
+}
+
 .village_switch_link {
     cursor: pointer;
     display: flex;
